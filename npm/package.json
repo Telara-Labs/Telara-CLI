@@ -1,5 +1,5 @@
 {
-  "name": "@telera/cli",
+  "name": "@telara-cli/cli",
   "version": "0.1.0",
   "description": "Telara CLI — manage your MCP configurations",
   "homepage": "https://telara.ai",
