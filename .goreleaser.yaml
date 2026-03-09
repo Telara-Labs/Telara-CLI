@@ -2,15 +2,7 @@ version: 2
 
 before:
   hooks:
-    - cmd: go mod tidy
-      dir: services/cli
-
-# After a successful release, bump the npm package version to match.
-# The npm publish step itself runs in CI (see .github/workflows/ci.yml release job).
-after:
-  hooks:
-    - cmd: bash -c 'cd npm && npm version {{ .Version }} --no-git-tag-version || true'
-      dir: .
+    - cd services/cli && go mod tidy
 
 builds:
   - dir: services/cli
