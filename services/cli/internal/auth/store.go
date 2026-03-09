@@ -76,17 +76,29 @@ func LoadToken(apiURL string) (string, error) {
 
 // DeleteToken removes the stored token for the given apiURL from both the
 // OS keychain (if present) and the file fallback.
+// If both deletions fail with real errors (not "not found"), a combined error is returned.
 func DeleteToken(apiURL string) error {
 	host, err := sanitizeHost(apiURL)
 	if err != nil {
 		return err
 	}
 
-	// Attempt keychain deletion (ignore error — may not be stored there)
-	_ = keyring.Delete(keyringService, host)
+	// Attempt keychain deletion; "not found" is acceptable.
+	keyringErr := keyring.Delete(keyringService, host)
+	// go-keyring returns an error whose text includes "not found" or similar for missing entries.
+	// Treat any error as non-fatal for keyring (it may not be stored there).
+	keyringFailed := keyringErr != nil && keyringErr.Error() != "secret not found in keyring"
 
-	// Attempt file deletion (ignore ErrNotExist)
-	return deleteTokenFile(host)
+	// Attempt file deletion (ignore ErrNotExist).
+	fileErr := deleteTokenFile(host)
+
+	if keyringFailed && fileErr != nil {
+		return fmt.Errorf("keyring: %w; file: %v", keyringErr, fileErr)
+	}
+	if fileErr != nil {
+		return fileErr
+	}
+	return nil
 }
 
 // --- file-based fallback ---

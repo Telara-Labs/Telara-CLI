@@ -1,0 +1,25 @@
+{
+  "name": "@telera/cli",
+  "version": "0.1.0",
+  "description": "Telara CLI — manage your MCP configurations",
+  "homepage": "https://telara.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Telera-Labs/Telera-CLI"
+  },
+  "license": "MIT",
+  "bin": {
+    "telara": "./bin/telara"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md"
+  ]
+}

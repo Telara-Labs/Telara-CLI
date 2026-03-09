@@ -2,10 +2,19 @@ version: 2
 
 before:
   hooks:
-    - go mod tidy
+    - cmd: go mod tidy
+      dir: services/cli
+
+# After a successful release, bump the npm package version to match.
+# The npm publish step itself runs in CI (see .github/workflows/ci.yml release job).
+after:
+  hooks:
+    - cmd: bash -c 'cd npm && npm version {{ .Version }} --no-git-tag-version || true'
+      dir: .
 
 builds:
-  - main: .
+  - dir: services/cli
+    main: ./cmd/server
     binary: telara
     env:
       - CGO_ENABLED=0
@@ -33,6 +42,28 @@ archives:
 checksum:
   name_template: "telara_checksums.txt"
 
+# GPG signing for Linux release artifacts.
+# Set GPG_FINGERPRINT in CI environment before running goreleaser.
+signs:
+  - artifacts: checksum
+    args:
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+# TODO: Apple notarization — requires Apple Developer certificate setup in CI.
+# TODO: Winget manifest submission to microsoft/winget-pkgs.
+# TODO: Scoop bucket autoupdate configuration.
+
+release:
+  github:
+    owner: Telera-Labs
+    name: Telera-CLI
+
 changelog:
   sort: asc
   filters:
@@ -44,7 +75,7 @@ changelog:
 brews:
   - name: telara
     repository:
-      owner: telera-ai
+      owner: Telera-Labs
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://telara.ai"

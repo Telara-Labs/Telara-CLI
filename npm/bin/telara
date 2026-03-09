@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+// This stub is replaced by the actual binary during postinstall (npm scripts/install.js).
+// If this script is still running, the postinstall step did not complete successfully.
+console.error('telara binary not found.');
+console.error('The postinstall step may have failed. Try reinstalling:');
+console.error('  npm install -g @telera/cli');
+console.error('');
+console.error('Or install manually:');
+console.error('  macOS/Linux: curl -fsSL https://get.telara.ai/install.sh | sh');
+console.error('  Windows:     irm https://get.telara.ai/windows | iex');
+process.exit(1);

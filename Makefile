@@ -6,13 +6,13 @@ LDFLAGS = -X gitlab.com/teleraai/telara-cli/services/cli/internal/version.Versio
           -X gitlab.com/teleraai/telara-cli/services/cli/internal/version.Date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/$(BIN_NAME) .
+	cd services/cli && go build -ldflags "$(LDFLAGS)" -o ../../bin/$(BIN_NAME) ./cmd/server
 
 test:
-	go test ./...
+	cd services/cli && go test ./...
 
 lint:
-	golangci-lint run ./...
+	cd services/cli && golangci-lint run ./...
 
 release-dry-run:
 	goreleaser release --snapshot --clean

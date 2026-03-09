@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -31,10 +32,18 @@ func NewClient(baseURL, token string) *Client {
 type APIError struct {
 	StatusCode int
 	Message    string
+	Body       string // raw response body
 }
 
 func (e *APIError) Error() string {
 	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Message)
+}
+
+// Post performs a POST request to the given path with the given body, decoding
+// the response into out (if non-nil). It does not require an auth token, making
+// it suitable for public endpoints such as device flow polling.
+func (c *Client) Post(ctx context.Context, path string, body, out interface{}) error {
+	return c.do(ctx, "POST", path, body, out)
 }
 
 // do performs an HTTP request, injects the auth header, and decodes the JSON
@@ -67,19 +76,23 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errResp struct {
-			Error   string `json:"error"`
-			Message string `json:"message"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		msg := errResp.Error
+		rawBytes, _ := io.ReadAll(resp.Body)
+		rawBody := string(rawBytes)
+
+		// Try to extract a human-readable message from JSON.
+		msg := extractJSONMessage(rawBytes)
 		if msg == "" {
-			msg = errResp.Message
+			// Fall back to raw body, truncated to 500 chars.
+			msg = rawBody
+			if len(msg) > 500 {
+				msg = msg[:500]
+			}
+			if msg == "" {
+				msg = resp.Status
+			}
 		}
-		if msg == "" {
-			msg = resp.Status
-		}
-		return &APIError{StatusCode: resp.StatusCode, Message: msg}
+
+		return &APIError{StatusCode: resp.StatusCode, Message: msg, Body: rawBody}
 	}
 
 	if out != nil {
@@ -88,4 +101,20 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 		}
 	}
 	return nil
+}
+
+// extractJSONMessage tries to pull a "message" or "error" string from a JSON body.
+// Returns empty string if the body is not valid JSON or neither field is present.
+func extractJSONMessage(data []byte) string {
+	var errResp struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &errResp); err != nil {
+		return ""
+	}
+	if errResp.Message != "" {
+		return errResp.Message
+	}
+	return errResp.Error
 }

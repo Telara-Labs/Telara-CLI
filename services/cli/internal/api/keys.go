@@ -1,6 +1,9 @@
 package api
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // APIKey describes a single API key associated with an MCP configuration.
 type APIKey struct {
@@ -15,8 +18,10 @@ type APIKey struct {
 
 // GenerateKeyRequest is the request body for POST /v1/cli/configs/:id/keys.
 type GenerateKeyRequest struct {
-	Name      string `json:"name"`
-	ExpiresIn int    `json:"expires_in_days"` // 0 = no expiry
+	Name             string `json:"name"`
+	ScopeType        string `json:"scope_type"`        // e.g. "tenant"
+	ScopeID          string `json:"scope_id"`           // empty for tenant-scoped
+	ExpiresInSeconds int    `json:"expires_in_seconds"` // 0 = no expiry
 }
 
 // GenerateKeyResponse is the response body from generating a new API key.
@@ -51,7 +56,9 @@ func (c *Client) ListKeys(ctx context.Context, configID string) (*ListKeysRespon
 	return &resp, nil
 }
 
-// RevokeKey revokes the API key with the given key ID.
-func (c *Client) RevokeKey(ctx context.Context, keyID string) error {
-	return c.do(ctx, "DELETE", "/v1/cli/keys/"+keyID, nil, nil)
+// RevokeKey revokes the API key with the given keyID, passing the owning configID
+// as a query parameter as required by DELETE /v1/cli/keys/:key_id?config_id=:config_id.
+func (c *Client) RevokeKey(ctx context.Context, keyID, configID string) error {
+	path := fmt.Sprintf("/v1/cli/keys/%s?config_id=%s", keyID, configID)
+	return c.do(ctx, "DELETE", path, nil, nil)
 }

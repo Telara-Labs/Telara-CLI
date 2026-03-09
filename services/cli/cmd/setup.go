@@ -2,141 +2,259 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
 )
 
+// toolKeyName returns a human-friendly API key name for a given tool,
+// incorporating the machine hostname for easy identification.
+func toolKeyName(toolName string) string {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return toolName
+	}
+	return toolName + "-" + hostname
+}
+
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure agent tools to use Telara MCP",
+	// Interactive mode when no subcommand is provided.
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runInteractiveSetup()
+	},
 }
 
 var setupConfigName string
-var setupGlobal bool
+var setupManaged bool
+
+// runSetupForWriter runs the full setup flow for a single AgentWriter using the
+// given scope. It prompts for config selection if setupConfigName is empty.
+func runSetupForWriter(w agent.AgentWriter, scope agent.Scope) error {
+	token, err := auth.LoadToken(prefs.APIURL)
+	if err != nil {
+		return fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
+	}
+	client := api.NewClient(prefs.APIURL, token)
+
+	selectedConfig, err := selectConfig(client)
+	if err != nil {
+		return err
+	}
+
+	keyResp, err := client.GenerateKey(context.Background(), selectedConfig.ID, api.GenerateKeyRequest{
+		Name:      toolKeyName(w.Name()),
+		ScopeType: "tenant",
+		ScopeID:   "",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	mcpURL := keyResp.MCPURL
+	if mcpURL == "" {
+		mcpURL = "https://mcp.telara.ai/sse"
+	}
+
+	entry := agent.MCPEntry{
+		Type: "sse",
+		URL:  mcpURL,
+		Headers: map[string]string{
+			"Authorization": "Bearer " + keyResp.RawKey,
+		},
+	}
+
+	if err := w.Write(scope, "telara", entry); err != nil {
+		return fmt.Errorf("failed to write %s config: %w", w.Name(), err)
+	}
+
+	fmt.Fprintf(os.Stdout, "Configured %s\n", w.Name())
+	fmt.Fprintf(os.Stdout, "Config:    %s\n", selectedConfig.Name)
+	fmt.Fprintf(os.Stdout, "MCP URL:   %s\n", mcpURL)
+	fmt.Fprintln(os.Stdout)
+	return nil
+}
+
+// selectConfig fetches configs and either returns the one matching setupConfigName,
+// or prompts the user to choose.
+func selectConfig(client *api.Client) (*api.MCPConfig, error) {
+	if setupConfigName != "" {
+		detail, err := client.GetConfig(context.Background(), setupConfigName)
+		if err != nil {
+			return nil, fmt.Errorf("config %q not found: %w", setupConfigName, err)
+		}
+		return &detail.MCPConfig, nil
+	}
+
+	resp, err := client.ListConfigs(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list configs: %w", err)
+	}
+	if len(resp.Configs) == 0 {
+		return nil, fmt.Errorf("no MCP configurations available — create one at https://app.telara.ai")
+	}
+	options := make([]string, len(resp.Configs))
+	for i, c := range resp.Configs {
+		options[i] = c.Name
+	}
+	var chosen string
+	prompt := &survey.Select{
+		Message: "Select MCP configuration:",
+		Options: options,
+	}
+	if err := survey.AskOne(prompt, &chosen); err != nil {
+		return nil, fmt.Errorf("selection cancelled: %w", err)
+	}
+	for i, name := range options {
+		if name == chosen {
+			return &resp.Configs[i], nil
+		}
+	}
+	return nil, fmt.Errorf("selection not found")
+}
+
+// runInteractiveSetup detects installed tools, asks which to configure, then
+// runs the setup for each selected tool.
+func runInteractiveSetup() error {
+	detected := agent.DetectedWriters()
+	if len(detected) == 0 {
+		return fmt.Errorf("no supported agent tools detected — install Claude Code, Cursor, Windsurf, or VS Code first")
+	}
+
+	names := make([]string, len(detected))
+	for i, w := range detected {
+		names[i] = w.Name()
+	}
+
+	var chosen []string
+	prompt := &survey.MultiSelect{
+		Message: "Select tools to configure:",
+		Options: names,
+	}
+	if err := survey.AskOne(prompt, &chosen); err != nil {
+		return fmt.Errorf("selection cancelled: %w", err)
+	}
+	if len(chosen) == 0 {
+		fmt.Fprintln(os.Stdout, "No tools selected.")
+		return nil
+	}
+
+	// Build a lookup map from name → writer.
+	byName := make(map[string]agent.AgentWriter, len(detected))
+	for _, w := range detected {
+		byName[w.Name()] = w
+	}
+
+	for _, name := range chosen {
+		w := byName[name]
+		fmt.Fprintf(os.Stdout, "\nSetting up %s...\n", name)
+		scope := agent.ScopeGlobal
+		if name == "vscode" {
+			scope = agent.ScopeProject
+		}
+		if err := runSetupForWriter(w, scope); err != nil {
+			fmt.Fprintf(os.Stderr, "Error configuring %s: %v\n", name, err)
+		}
+	}
+	return nil
+}
+
+// --- per-tool subcommands ---
 
 var setupClaudeCodeCmd = &cobra.Command{
 	Use:   "claude-code",
 	Short: "Configure Claude Code to use Telara MCP",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := auth.LoadToken(prefs.APIURL)
-		if err != nil {
-			return fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
+		w := agent.NewClaudeCodeWriter()
+		scope := agent.ScopeGlobal
+		if setupManaged {
+			scope = agent.ScopeManaged
 		}
-		client := api.NewClient(prefs.APIURL, token)
+		if err := runSetupForWriter(w, scope); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, "Restart Claude Code to connect.")
+		return nil
+	},
+}
 
-		var selectedConfig *api.MCPConfig
-		if setupConfigName != "" {
-			detail, err := client.GetConfig(context.Background(), setupConfigName)
-			if err != nil {
-				return fmt.Errorf("config %q not found: %w", setupConfigName, err)
-			}
-			selectedConfig = &detail.MCPConfig
-		} else {
-			resp, err := client.ListConfigs(context.Background())
-			if err != nil {
-				return fmt.Errorf("failed to list configs: %w", err)
-			}
-			if len(resp.Configs) == 0 {
-				return fmt.Errorf("no MCP configurations available — create one at https://app.telara.ai")
-			}
-			options := make([]string, len(resp.Configs))
-			for i, c := range resp.Configs {
-				options[i] = c.Name
-			}
-			var chosen string
-			prompt := &survey.Select{
-				Message: "Select MCP configuration:",
-				Options: options,
-			}
-			if err := survey.AskOne(prompt, &chosen); err != nil {
-				return fmt.Errorf("selection cancelled: %w", err)
-			}
-			for i, name := range options {
-				if name == chosen {
-					selectedConfig = &resp.Configs[i]
-					break
-				}
-			}
+var setupCursorCmd = &cobra.Command{
+	Use:   "cursor",
+	Short: "Configure Cursor to use Telara MCP",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		w := agent.NewCursorWriter()
+		if err := runSetupForWriter(w, agent.ScopeGlobal); err != nil {
+			return err
 		}
+		fmt.Fprintln(os.Stdout, "Restart Cursor to connect.")
+		return nil
+	},
+}
 
-		// Generate an API key for this configuration
-		keyResp, err := client.GenerateKey(context.Background(), selectedConfig.ID, api.GenerateKeyRequest{
-			Name: "telara-cli",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to generate API key: %w", err)
+var setupWindsurfCmd = &cobra.Command{
+	Use:   "windsurf",
+	Short: "Configure Windsurf to use Telara MCP",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		w := agent.NewWindsurfWriter()
+		if err := runSetupForWriter(w, agent.ScopeGlobal); err != nil {
+			return err
 		}
+		fmt.Fprintln(os.Stdout, "Restart Windsurf to connect.")
+		return nil
+	},
+}
 
-		// Determine ~/.claude/settings.json path
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("cannot determine home directory: %w", err)
+var setupVSCodeCmd = &cobra.Command{
+	Use:   "vscode",
+	Short: "Configure VS Code to use Telara MCP (project scope only)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		w := agent.NewVSCodeWriter()
+		// VS Code only supports project-scope MCP config.
+		if err := runSetupForWriter(w, agent.ScopeProject); err != nil {
+			return err
 		}
-		claudeDir := filepath.Join(homeDir, ".claude")
-		if err := os.MkdirAll(claudeDir, 0700); err != nil {
-			return fmt.Errorf("failed to create .claude directory: %w", err)
-		}
-		settingsPath := filepath.Join(claudeDir, "settings.json")
+		fmt.Fprintln(os.Stdout, "Reload VS Code to connect.")
+		return nil
+	},
+}
 
-		// Read existing settings if present
-		var settings map[string]interface{}
-		if data, err := os.ReadFile(settingsPath); err == nil {
-			if err := json.Unmarshal(data, &settings); err != nil {
-				settings = make(map[string]interface{})
+var setupAllCmd = &cobra.Command{
+	Use:   "all",
+	Short: "Configure all detected agent tools to use Telara MCP",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		detected := agent.DetectedWriters()
+		if len(detected) == 0 {
+			return fmt.Errorf("no supported agent tools detected")
+		}
+		for _, w := range detected {
+			fmt.Fprintf(os.Stdout, "\nSetting up %s...\n", w.Name())
+			scope := agent.ScopeGlobal
+			if w.Name() == "vscode" {
+				scope = agent.ScopeProject
 			}
-		} else {
-			settings = make(map[string]interface{})
+			if err := runSetupForWriter(w, scope); err != nil {
+				fmt.Fprintf(os.Stderr, "Error configuring %s: %v\n", w.Name(), err)
+			}
 		}
-
-		// Merge Telara entry into mcpServers
-		mcpServers, _ := settings["mcpServers"].(map[string]interface{})
-		if mcpServers == nil {
-			mcpServers = make(map[string]interface{})
-		}
-		mcpURL := keyResp.MCPURL
-		if mcpURL == "" {
-			mcpURL = "https://mcp.telara.ai/sse"
-		}
-		mcpServers["telara"] = map[string]interface{}{
-			"type": "sse",
-			"url":  mcpURL,
-			"headers": map[string]string{
-				"Authorization": "Bearer " + keyResp.RawKey,
-			},
-		}
-		settings["mcpServers"] = mcpServers
-
-		// Write atomically via temp file + rename
-		tmpPath := settingsPath + ".tmp"
-		data, err := json.MarshalIndent(settings, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal settings: %w", err)
-		}
-		if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-			return fmt.Errorf("failed to write settings: %w", err)
-		}
-		if err := os.Rename(tmpPath, settingsPath); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
-
-		fmt.Fprintf(os.Stdout, "Updated %s\n", settingsPath)
-		fmt.Fprintf(os.Stdout, "Config:  %s\n", selectedConfig.Name)
-		fmt.Fprintf(os.Stdout, "MCP URL: %s\n", mcpURL)
-		fmt.Fprintln(os.Stdout, "\nRestart Claude Code to connect.")
 		return nil
 	},
 }
 
 func init() {
-	setupClaudeCodeCmd.Flags().StringVar(&setupConfigName, "config", "", "MCP configuration name or ID")
-	setupClaudeCodeCmd.Flags().BoolVar(&setupGlobal, "global", true, "Write to global config (~/.claude/settings.json)")
+	// Persistent --config flag shared by all setup subcommands.
+	setupCmd.PersistentFlags().StringVar(&setupConfigName, "config", "", "MCP configuration name or ID")
+	setupCmd.PersistentFlags().BoolVar(&setupManaged, "managed", false, "Write managed-layer config (requires elevated permissions)")
+
 	setupCmd.AddCommand(setupClaudeCodeCmd)
+	setupCmd.AddCommand(setupCursorCmd)
+	setupCmd.AddCommand(setupWindsurfCmd)
+	setupCmd.AddCommand(setupVSCodeCmd)
+	setupCmd.AddCommand(setupAllCmd)
 	rootCmd.AddCommand(setupCmd)
 }

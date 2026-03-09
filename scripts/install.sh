@@ -4,7 +4,7 @@ set -euo pipefail
 # Telara CLI installer
 # Usage: curl -fsSL https://get.telara.ai/install.sh | sh
 
-REPO="telera-ai/telera-cli"
+REPO="Telera-Labs/Telera-CLI"
 BINARY="telara"
 INSTALL_DIR="${TELARA_INSTALL_DIR:-/usr/local/bin}"
 
