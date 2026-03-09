@@ -54,6 +54,16 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Debug GITHUB_TOKEN and repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_OWNER=$GITHUB_REPOSITORY_OWNER"
+          gh api repos/$GITHUB_REPOSITORY --jq '.full_name'
+          gh api repos/$GITHUB_REPOSITORY/releases --jq 'length'
+          echo "goreleaser targets: Telera-Labs/Telera-CLI"
+
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
