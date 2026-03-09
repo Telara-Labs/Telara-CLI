@@ -5,7 +5,7 @@
   "homepage": "https://telara.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Telera-Labs/Telera-CLI"
+    "url": "https://github.com/Telara-Labs/Telara-CLI"
   },
   "license": "MIT",
   "bin": {

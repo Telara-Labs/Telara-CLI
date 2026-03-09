@@ -13,7 +13,7 @@ const pkg = require('../package.json');
 const version = process.env.TELARA_VERSION || pkg.version;
 
 const PRIMARY_BASE_URL = 'https://get.telara.ai/download';
-const FALLBACK_BASE_URL = 'https://github.com/Telera-Labs/Telera-CLI/releases/download';
+const FALLBACK_BASE_URL = 'https://github.com/Telara-Labs/Telara-CLI/releases/download';
 const MANUAL_INSTALL_URL = 'https://telara.ai/docs/cli/install';
 
 function getPlatformInfo() {

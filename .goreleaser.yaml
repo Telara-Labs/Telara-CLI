@@ -55,8 +55,8 @@ signs:
 
 release:
   github:
-    owner: Telera-Labs
-    name: Telera-CLI
+    owner: Telara-Labs
+    name: Telara-CLI
 
 changelog:
   sort: asc
@@ -69,7 +69,7 @@ changelog:
 brews:
   - name: telara
     repository:
-      owner: Telera-Labs
+      owner: Telara-Labs
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://telara.ai"
