@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/auth"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/display"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
 var configCmd = &cobra.Command{

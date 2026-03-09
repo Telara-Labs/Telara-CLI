@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/auth"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
 )
 
 var whoamiCmd = &cobra.Command{

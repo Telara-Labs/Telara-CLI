@@ -1,6 +1,6 @@
 package main
 
-import "gitlab.com/teleraai/telera-cli/services/cli/cmd"
+import "gitlab.com/teleraai/telara-cli/services/cli/cmd"
 
 func main() {
 	cmd.Execute()

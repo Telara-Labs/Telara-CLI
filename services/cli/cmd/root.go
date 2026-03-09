@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telera-cli/services/cli/internal/config"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
 )
 
 var (

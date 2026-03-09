@@ -11,9 +11,9 @@ builds:
       - CGO_ENABLED=0
     ldflags:
       - -s -w
-      - -X gitlab.com/teleraai/telera-cli/services/cli/internal/version.Version={{.Version}}
-      - -X gitlab.com/teleraai/telera-cli/services/cli/internal/version.Commit={{.Commit}}
-      - -X gitlab.com/teleraai/telera-cli/services/cli/internal/version.Date={{.Date}}
+      - -X gitlab.com/teleraai/telara-cli/services/cli/internal/version.Version={{.Version}}
+      - -X gitlab.com/teleraai/telara-cli/services/cli/internal/version.Commit={{.Commit}}
+      - -X gitlab.com/teleraai/telara-cli/services/cli/internal/version.Date={{.Date}}
     goos:
       - linux
       - darwin
