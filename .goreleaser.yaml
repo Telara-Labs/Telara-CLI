@@ -2,7 +2,7 @@ version: 2
 
 before:
   hooks:
-    - cd services/cli && go mod tidy
+    - sh -c "cd services/cli && go mod tidy"
 
 builds:
   - dir: services/cli
@@ -25,10 +25,12 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
