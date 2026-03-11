@@ -121,7 +121,7 @@ Generate MCP access keys for specific deployment scenarios.
 ## Documentation
 
 - [Telara docs](https://telara.dev/docs)
-- [CLI installation guide](https://telara.dev/docs/cli/install)
+- [CLI installation guide](https://docs.telara.dev/mcp-clients/cli)
 
 ## License
 

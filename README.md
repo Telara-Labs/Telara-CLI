@@ -143,7 +143,7 @@ go test ./... -v -timeout 60s
 ## Documentation
 
 - [Telara docs](https://telara.dev/docs)
-- [CLI installation guide](https://telara.dev/docs/cli/install)
+- [CLI installation guide](https://docs.telara.dev/mcp-clients/cli)
 
 ## License
 

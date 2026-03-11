@@ -14,7 +14,7 @@ const version = process.env.TELARA_VERSION || pkg.version;
 
 const PRIMARY_BASE_URL = 'https://get.telara.dev/download';
 const FALLBACK_BASE_URL = 'https://github.com/Telara-Labs/Telara-CLI/releases/download';
-const MANUAL_INSTALL_URL = 'https://telara.dev/docs/cli/install';
+const MANUAL_INSTALL_URL = 'https://docs.telara.dev/mcp-clients/cli';
 
 function getPlatformInfo() {
   const platform = process.platform;
