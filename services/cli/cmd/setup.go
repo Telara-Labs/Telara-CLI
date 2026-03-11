@@ -59,7 +59,7 @@ func runSetupForWriter(w agent.AgentWriter, scope agent.Scope) error {
 
 	mcpURL := keyResp.MCPURL
 	if mcpURL == "" {
-		mcpURL = "https://mcp.telara.ai/sse"
+		mcpURL = prefs.APIURL + "/v1/mcp/sse"
 	}
 
 	entry := agent.MCPEntry{
@@ -97,7 +97,7 @@ func selectConfig(client *api.Client) (*api.MCPConfig, error) {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
 	if len(resp.Configs) == 0 {
-		return nil, fmt.Errorf("no MCP configurations available — create one at https://app.telara.ai")
+		return nil, fmt.Errorf("no MCP configurations available — create one at https://app.telara.dev")
 	}
 	options := make([]string, len(resp.Configs))
 	for i, c := range resp.Configs {

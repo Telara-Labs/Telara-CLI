@@ -103,7 +103,7 @@ func TestConfigList_Unauthenticated(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	apiURL := "https://api.telara.ai"
+	apiURL := "https://api.telara.dev"
 	prefs = &config.Prefs{APIURL: apiURL}
 	defer func() { prefs = config.DefaultPrefs() }()
 
@@ -130,7 +130,7 @@ func TestConfigShow_Success(t *testing.T) {
 		"scope_type":   "tenant",
 		"scope_id":     "",
 		"status":       "active",
-		"mcp_url":      "https://mcp.telara.ai/abc-123",
+		"mcp_url":      "https://mcp.telara.dev/abc-123",
 		"policy_count": 1,
 		"key_count":    2,
 		"data_sources": []interface{}{},
@@ -166,7 +166,7 @@ func TestConfigShow_Success(t *testing.T) {
 	if !strings.Contains(output, "my-config") {
 		t.Errorf("expected output to contain config name, got:\n%s", output)
 	}
-	if !strings.Contains(output, "https://mcp.telara.ai/abc-123") {
+	if !strings.Contains(output, "https://mcp.telara.dev/abc-123") {
 		t.Errorf("expected output to contain MCP URL, got:\n%s", output)
 	}
 }

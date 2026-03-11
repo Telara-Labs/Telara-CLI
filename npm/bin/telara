@@ -3,9 +3,9 @@
 // If this script is still running, the postinstall step did not complete successfully.
 console.error('telara binary not found.');
 console.error('The postinstall step may have failed. Try reinstalling:');
-console.error('  npm install -g @telera/cli');
+console.error('  npm install -g @telara-cli/cli');
 console.error('');
 console.error('Or install manually:');
-console.error('  macOS/Linux: curl -fsSL https://get.telara.ai/install.sh | sh');
-console.error('  Windows:     irm https://get.telara.ai/windows | iex');
+console.error('  macOS/Linux: curl -fsSL https://get.telara.dev/install.sh | sh');
+console.error('  Windows:     irm https://get.telara.dev/windows | iex');
 process.exit(1);

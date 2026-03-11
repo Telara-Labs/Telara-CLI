@@ -13,7 +13,7 @@ func TestSaveAndLoad_FileOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	apiURL := "https://api.telara.ai"
+	apiURL := "https://api.telara.dev"
 	token := "tlrc_test_file_token_1234567890"
 
 	if err := SaveToken(apiURL, token); err != nil {
@@ -33,7 +33,7 @@ func TestDeleteToken_Clears(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	apiURL := "https://api.telara.ai"
+	apiURL := "https://api.telara.dev"
 	token := "tlrc_delete_test_token_1234567890"
 
 	if err := SaveToken(apiURL, token); err != nil {
@@ -57,7 +57,7 @@ func TestLoadToken_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	apiURL := "https://api.telara.ai"
+	apiURL := "https://api.telara.dev"
 
 	_, err := LoadToken(apiURL)
 	if err == nil {
@@ -72,8 +72,8 @@ func TestSaveAndLoad_MultipleHosts(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	url1 := "https://api.telara.ai"
-	url2 := "https://staging-api.telara.ai"
+	url1 := "https://api.telara.dev"
+	url2 := "https://staging-api.telara.dev"
 	token1 := "tlrc_host1_token_00000000000000"
 	token2 := "tlrc_host2_token_00000000000000"
 

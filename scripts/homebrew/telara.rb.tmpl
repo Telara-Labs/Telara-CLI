@@ -2,27 +2,27 @@
 # The actual formula lives in github.com/telera-ai/homebrew-tap
 class Telara < Formula
   desc "Telara CLI — manage your MCP configurations"
-  homepage "https://telara.ai"
+  homepage "https://telara.dev"
   version "{{.Version}}"
 
   on_macos do
     on_arm do
-      url "https://get.telara.ai/download/v{{.Version}}/telara_{{.Version}}_darwin_arm64.tar.gz"
+      url "https://get.telara.dev/download/v{{.Version}}/telara_{{.Version}}_darwin_arm64.tar.gz"
       sha256 "{{.Sha256DarwinArm64}}"
     end
     on_intel do
-      url "https://get.telara.ai/download/v{{.Version}}/telara_{{.Version}}_darwin_amd64.tar.gz"
+      url "https://get.telara.dev/download/v{{.Version}}/telara_{{.Version}}_darwin_amd64.tar.gz"
       sha256 "{{.Sha256DarwinAmd64}}"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://get.telara.ai/download/v{{.Version}}/telara_{{.Version}}_linux_arm64.tar.gz"
+      url "https://get.telara.dev/download/v{{.Version}}/telara_{{.Version}}_linux_arm64.tar.gz"
       sha256 "{{.Sha256LinuxArm64}}"
     end
     on_intel do
-      url "https://get.telara.ai/download/v{{.Version}}/telara_{{.Version}}_linux_amd64.tar.gz"
+      url "https://get.telara.dev/download/v{{.Version}}/telara_{{.Version}}_linux_amd64.tar.gz"
       sha256 "{{.Sha256LinuxAmd64}}"
     end
   end

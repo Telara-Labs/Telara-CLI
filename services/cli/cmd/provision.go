@@ -80,7 +80,7 @@ func runProvisionClaudeWeb(cmd *cobra.Command, args []string) error {
 
 	mcpURL := keyResp.MCPURL
 	if mcpURL == "" {
-		mcpURL = "https://mcp.telara.ai/sse"
+		mcpURL = "https://mcp.telara.dev/sse"
 	}
 
 	fmt.Fprintln(os.Stdout, "Claude.ai Organization Connector Setup")
@@ -115,7 +115,7 @@ func runProvisionCI(cmd *cobra.Command, args []string) error {
 
 	mcpURL := keyResp.MCPURL
 	if mcpURL == "" {
-		mcpURL = "https://mcp.telara.ai/sse"
+		mcpURL = "https://mcp.telara.dev/sse"
 	}
 
 	fmt.Fprintln(os.Stdout, "CI/CD Service Account Key")
@@ -154,7 +154,7 @@ func runProvisionManaged(cmd *cobra.Command, args []string) error {
 
 	mcpURL := keyResp.MCPURL
 	if mcpURL == "" {
-		mcpURL = "https://mcp.telara.ai/sse"
+		mcpURL = "https://mcp.telara.dev/sse"
 	}
 
 	managed := map[string]interface{}{

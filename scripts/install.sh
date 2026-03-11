@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Telara CLI installer
-# Usage: curl -fsSL https://get.telara.ai/install.sh | sh
+# Usage: curl -fsSL https://get.telara.dev/install.sh | sh
 
 REPO="Telara-Labs/Telara-CLI"
 BINARY="telara"
@@ -25,7 +25,7 @@ case "$OS" in
   linux|darwin) ;;
   *)
     echo "Unsupported OS: $OS" >&2
-    echo "For Windows, run: irm https://get.telara.ai/windows | iex" >&2
+    echo "For Windows, run: irm https://get.telara.dev/windows | iex" >&2
     exit 1
     ;;
 esac
@@ -33,14 +33,14 @@ esac
 # Get latest version
 VERSION="${TELARA_VERSION:-}"
 if [ -z "$VERSION" ]; then
-  VERSION="$(curl -fsSL "https://get.telara.ai/latest-version")"
+  VERSION="$(curl -fsSL "https://get.telara.dev/latest-version")"
 fi
 
 echo "Installing telara ${VERSION} (${OS}/${ARCH})..."
 
 # Download URL
 FILENAME="${BINARY}_${VERSION#v}_${OS}_${ARCH}.tar.gz"
-URL="https://get.telara.ai/download/${VERSION}/${FILENAME}"
+URL="https://get.telara.dev/download/${VERSION}/${FILENAME}"
 
 # Download and extract
 TMP="$(mktemp -d)"
@@ -63,6 +63,6 @@ echo ""
 echo "telara installed to $INSTALL_DIR/$BINARY"
 echo ""
 echo "Get started:"
-echo "  1. Generate a token at https://app.telara.ai/settings?tab=developer"
+echo "  1. Generate a token at https://app.telara.dev/settings?tab=developer"
 echo "  2. telara login --token <your-token>"
 echo "  3. telara setup claude-code"

@@ -15,6 +15,7 @@ var (
 	rootAPIURL  string
 	rootContext string
 	verbose     bool
+	caCertPath  string
 	prefs       *config.Prefs
 )
 
@@ -67,6 +68,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootAPIURL, "api-url", "", "Telara API base URL (overrides config)")
 	rootCmd.PersistentFlags().StringVar(&rootContext, "context", "", "Active context name (overrides config)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Print full HTTP response on errors")
+	rootCmd.PersistentFlags().StringVar(&caCertPath, "ca-cert", "", "Path to CA certificate for TLS verification (local dev with self-signed cert)")
 }
 
 func initConfig() {
@@ -78,5 +80,10 @@ func initConfig() {
 	}
 	if rootAPIURL != "" {
 		prefs.APIURL = rootAPIURL
+	} else if envURL := os.Getenv("TELARA_API_URL"); envURL != "" {
+		prefs.APIURL = envURL
+	}
+	if caCertPath != "" {
+		os.Setenv("TELERA_CA_CERT_PATH", caCertPath)
 	}
 }

@@ -24,7 +24,7 @@ type credentialFile struct {
 }
 
 // sanitizeHost converts an API URL to a safe filename component.
-// e.g. "https://api.telara.ai" -> "api.telara.ai"
+// e.g. "https://api.telara.dev" -> "api.telara.dev"
 func sanitizeHost(apiURL string) (string, error) {
 	u, err := url.Parse(apiURL)
 	if err != nil {

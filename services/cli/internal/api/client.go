@@ -3,10 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -18,12 +21,40 @@ type Client struct {
 }
 
 // NewClient creates a new API client for the given base URL and bearer token.
+//
+// TLS behaviour (checked in order):
+//  1. TELERA_INSECURE=true  — skip verification entirely (escape hatch, not recommended)
+//  2. TELERA_CA_CERT_PATH   — load a custom CA bundle (local dev with self-signed cert)
+//  3. default               — system CA pool (works for Let's Encrypt / public CAs)
 func NewClient(baseURL, token string) *Client {
+	var transport http.RoundTripper = http.DefaultTransport
+
+	if os.Getenv("TELERA_INSECURE") == "true" {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		}
+	} else if caPath := os.Getenv("TELERA_CA_CERT_PATH"); caPath != "" {
+		caPEM, err := os.ReadFile(caPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: TELERA_CA_CERT_PATH: cannot read %s: %v\n", caPath, err)
+			os.Exit(1)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			fmt.Fprintf(os.Stderr, "error: TELERA_CA_CERT_PATH: no valid certs found in %s\n", caPath)
+			os.Exit(1)
+		}
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool},
+		}
+	}
+
 	return &Client{
 		BaseURL: baseURL,
 		Token:   token,
 		HTTPClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout:   15 * time.Second,
+			Transport: transport,
 		},
 	}
 }

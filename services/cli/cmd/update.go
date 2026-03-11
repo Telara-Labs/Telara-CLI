@@ -44,7 +44,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stdout, "Updating from %s to %s...\n", current, latest)
 
 	filename := buildFilename(latest)
-	downloadURL := fmt.Sprintf("https://get.telara.ai/download/%s/%s", latest, filename)
+	downloadURL := fmt.Sprintf("https://get.telara.dev/download/%s/%s", latest, filename)
 
 	tmpDir, err := os.MkdirTemp("", "telara-update-*")
 	if err != nil {
@@ -211,17 +211,17 @@ func printInstallInstructions(ver string) {
 	switch runtime.GOOS {
 	case "darwin":
 		fmt.Fprintln(os.Stderr, "  Homebrew:     brew upgrade telara")
-		fmt.Fprintf(os.Stderr, "  Install script: curl -sf https://get.telara.ai/install.sh | sh\n")
+		fmt.Fprintf(os.Stderr, "  Install script: curl -sf https://get.telara.dev/install.sh | sh\n")
 	case "windows":
 		fmt.Fprintln(os.Stderr, "  Re-run the PowerShell installer:")
-		fmt.Fprintln(os.Stderr, "    iwr https://get.telara.ai/install.ps1 | iex")
+		fmt.Fprintln(os.Stderr, "    iwr https://get.telara.dev/install.ps1 | iex")
 	default:
-		fmt.Fprintf(os.Stderr, "  Install script: curl -sf https://get.telara.ai/install.sh | sh\n")
+		fmt.Fprintf(os.Stderr, "  Install script: curl -sf https://get.telara.dev/install.sh | sh\n")
 	}
 }
 
 func fetchLatestVersion() (string, error) {
-	resp, err := http.Get("https://get.telara.ai/latest-version") //nolint:noctx
+	resp, err := http.Get("https://get.telara.dev/latest-version") //nolint:noctx
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}

@@ -72,7 +72,7 @@ brews:
       owner: Telara-Labs
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://telara.ai"
+    homepage: "https://telara.dev"
     description: "Telara CLI — manage your MCP configurations"
     install: |
       bin.install "telara"

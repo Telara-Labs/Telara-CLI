@@ -2,7 +2,7 @@
   "name": "@telara-cli/cli",
   "version": "0.1.0",
   "description": "Telara CLI — manage your MCP configurations",
-  "homepage": "https://telara.ai",
+  "homepage": "https://telara.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/Telara-Labs/Telara-CLI"

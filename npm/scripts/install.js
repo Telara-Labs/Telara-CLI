@@ -12,9 +12,9 @@ const { execSync } = require('child_process');
 const pkg = require('../package.json');
 const version = process.env.TELARA_VERSION || pkg.version;
 
-const PRIMARY_BASE_URL = 'https://get.telara.ai/download';
+const PRIMARY_BASE_URL = 'https://get.telara.dev/download';
 const FALLBACK_BASE_URL = 'https://github.com/Telara-Labs/Telara-CLI/releases/download';
-const MANUAL_INSTALL_URL = 'https://telara.ai/docs/cli/install';
+const MANUAL_INSTALL_URL = 'https://telara.dev/docs/cli/install';
 
 function getPlatformInfo() {
   const platform = process.platform;
@@ -214,7 +214,7 @@ async function main() {
     console.log(`telara installed successfully.`);
     console.log('');
     console.log('Get started:');
-    console.log('  1. Generate a token at https://app.telara.ai/settings?tab=developer');
+    console.log('  1. Generate a token at https://app.telara.dev/settings?tab=developer');
     console.log('  2. telara login --token <your-token>');
     console.log('  3. telara setup claude-code');
   } finally {
@@ -232,8 +232,8 @@ main().catch((err) => {
   console.error('telara install failed: ' + err.message);
   console.error('');
   console.error('Install manually:');
-  console.error('  macOS/Linux: curl -fsSL https://get.telara.ai/install.sh | sh');
-  console.error('  Windows:     irm https://get.telara.ai/windows | iex');
+  console.error('  macOS/Linux: curl -fsSL https://get.telara.dev/install.sh | sh');
+  console.error('  Windows:     irm https://get.telara.dev/windows | iex');
   console.error('  More options: ' + MANUAL_INSTALL_URL);
   console.error('');
   process.exit(1);

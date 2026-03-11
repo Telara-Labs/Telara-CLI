@@ -1,5 +1,5 @@
 # Telara CLI installer for Windows
-# Usage: irm https://get.telara.ai/windows | iex
+# Usage: irm https://get.telara.dev/windows | iex
 
 param(
     [string]$Version = "",
@@ -18,14 +18,14 @@ $Arch = if ([System.Environment]::Is64BitOperatingSystem) { "amd64" } else {
 
 # Get latest version
 if (-not $Version) {
-    $Version = (Invoke-RestMethod "https://get.telara.ai/latest-version").Trim()
+    $Version = (Invoke-RestMethod "https://get.telara.dev/latest-version").Trim()
 }
 
 $VersionNum = $Version.TrimStart("v")
 Write-Host "Installing telara $Version (windows/$Arch)..."
 
 $Filename = "telara_${VersionNum}_windows_${Arch}.zip"
-$Url = "https://get.telara.ai/download/$Version/$Filename"
+$Url = "https://get.telara.dev/download/$Version/$Filename"
 
 # Download
 $Tmp = [System.IO.Path]::GetTempPath() + [System.IO.Path]::GetRandomFileName()
@@ -58,6 +58,6 @@ Write-Host ""
 Write-Host "telara installed to $InstallDir\$Binary"
 Write-Host ""
 Write-Host "Get started:"
-Write-Host "  1. Generate a token at https://app.telara.ai/settings?tab=developer"
+Write-Host "  1. Generate a token at https://app.telara.dev/settings?tab=developer"
 Write-Host "  2. telara login --token <your-token>"
 Write-Host "  3. telara setup claude-code"
