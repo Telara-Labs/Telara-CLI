@@ -40,6 +40,10 @@ func (w *windsurfWriter) configPath(scope Scope) (string, error) {
 	}
 }
 
+func (w *windsurfWriter) ConfigPath(scope Scope) (string, error) {
+	return w.configPath(scope)
+}
+
 func (w *windsurfWriter) Write(scope Scope, serverName string, cfg MCPEntry) error {
 	path, err := w.configPath(scope)
 	if err != nil {

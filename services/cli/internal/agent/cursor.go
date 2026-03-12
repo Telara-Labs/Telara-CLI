@@ -40,6 +40,10 @@ func (w *cursorWriter) configPath(scope Scope) (string, error) {
 	}
 }
 
+func (w *cursorWriter) ConfigPath(scope Scope) (string, error) {
+	return w.configPath(scope)
+}
+
 func (w *cursorWriter) Write(scope Scope, serverName string, cfg MCPEntry) error {
 	path, err := w.configPath(scope)
 	if err != nil {

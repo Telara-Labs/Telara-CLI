@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
@@ -97,7 +98,7 @@ func selectConfig(client *api.Client) (*api.MCPConfig, error) {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
 	if len(resp.Configs) == 0 {
-		return nil, fmt.Errorf("no MCP configurations available — create one at https://app.telara.dev")
+		return nil, fmt.Errorf("no MCP configurations available — create one at https://telara.dev")
 	}
 	options := make([]string, len(resp.Configs))
 	for i, c := range resp.Configs {
@@ -127,18 +128,9 @@ func runInteractiveSetup() error {
 		return fmt.Errorf("no supported agent tools detected — install Claude Code, Cursor, Windsurf, or VS Code first")
 	}
 
-	names := make([]string, len(detected))
-	for i, w := range detected {
-		names[i] = w.Name()
-	}
-
-	var chosen []string
-	prompt := &survey.MultiSelect{
-		Message: "Select tools to configure:",
-		Options: names,
-	}
-	if err := survey.AskOne(prompt, &chosen); err != nil {
-		return fmt.Errorf("selection cancelled: %w", err)
+	chosen, err := pickTools(detected)
+	if err != nil {
+		return err
 	}
 	if len(chosen) == 0 {
 		fmt.Fprintln(os.Stdout, "No tools selected.")
@@ -160,9 +152,73 @@ func runInteractiveSetup() error {
 		}
 		if err := runSetupForWriter(w, scope); err != nil {
 			fmt.Fprintf(os.Stderr, "Error configuring %s: %v\n", name, err)
+			continue
+		}
+		if scope == agent.ScopeProject {
+			cwd, err := os.Getwd()
+			if err == nil {
+				if err := agent.RegisterProject(cwd, name); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to register project for %s: %v\n", name, err)
+				}
+			}
 		}
 	}
 	return nil
+}
+
+// pickTools presents a Select-loop so the user navigates with arrow keys,
+// toggles each tool with Enter, and confirms via a "Done" option at the bottom.
+func pickTools(detected []agent.AgentWriter) ([]string, error) {
+	selected := make(map[string]bool)
+
+	for {
+		// Build option list: "[x] name" or "[ ] name" for each tool, then "Done".
+		options := make([]string, 0, len(detected)+1)
+		for _, w := range detected {
+			prefix := "[ ]"
+			if selected[w.Name()] {
+				prefix = "[x]"
+			}
+			options = append(options, prefix+" "+w.Name())
+		}
+
+		nSelected := 0
+		for _, v := range selected {
+			if v {
+				nSelected++
+			}
+		}
+		if nSelected == 0 {
+			options = append(options, "Done")
+		} else {
+			options = append(options, fmt.Sprintf("Done  (%d selected)", nSelected))
+		}
+
+		var pick string
+		if err := survey.AskOne(&survey.Select{
+			Message: "Select tools to configure:",
+			Options: options,
+		}, &pick); err != nil {
+			return nil, fmt.Errorf("selection cancelled: %w", err)
+		}
+
+		if strings.HasPrefix(pick, "Done") {
+			break
+		}
+
+		// Strip the "[x] " / "[ ] " prefix (4 chars) to get the tool name.
+		name := pick[4:]
+		selected[name] = !selected[name]
+	}
+
+	// Return tools in detection order.
+	var chosen []string
+	for _, w := range detected {
+		if selected[w.Name()] {
+			chosen = append(chosen, w.Name())
+		}
+	}
+	return chosen, nil
 }
 
 // --- per-tool subcommands ---
@@ -219,6 +275,12 @@ var setupVSCodeCmd = &cobra.Command{
 		if err := runSetupForWriter(w, agent.ScopeProject); err != nil {
 			return err
 		}
+		cwd, err := os.Getwd()
+		if err == nil {
+			if err := agent.RegisterProject(cwd, "vscode"); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to register project: %v\n", err)
+			}
+		}
 		fmt.Fprintln(os.Stdout, "Reload VS Code to connect.")
 		return nil
 	},
@@ -240,6 +302,15 @@ var setupAllCmd = &cobra.Command{
 			}
 			if err := runSetupForWriter(w, scope); err != nil {
 				fmt.Fprintf(os.Stderr, "Error configuring %s: %v\n", w.Name(), err)
+				continue
+			}
+			if scope == agent.ScopeProject {
+				cwd, err := os.Getwd()
+				if err == nil {
+					if err := agent.RegisterProject(cwd, w.Name()); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to register project for %s: %v\n", w.Name(), err)
+					}
+				}
 			}
 		}
 		return nil

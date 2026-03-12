@@ -51,6 +51,10 @@ func (w *claudeCodeWriter) configPath(scope Scope) (string, error) {
 	}
 }
 
+func (w *claudeCodeWriter) ConfigPath(scope Scope) (string, error) {
+	return w.configPath(scope)
+}
+
 func (w *claudeCodeWriter) Write(scope Scope, serverName string, cfg MCPEntry) error {
 	path, err := w.configPath(scope)
 	if err != nil {

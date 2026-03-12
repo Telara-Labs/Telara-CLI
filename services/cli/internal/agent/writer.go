@@ -25,6 +25,9 @@ type AgentWriter interface {
 	Name() string
 	// Detect returns true if the tool appears to be installed on this machine.
 	Detect() bool
+	// ConfigPath returns the path of the config file for the given scope.
+	// For ScopeProject, the path is relative to the current working directory.
+	ConfigPath(scope Scope) (string, error)
 	// Write merges the given MCPEntry under the given server name into the config file
 	// selected by scope, creating the file (and parent directories) as needed.
 	Write(scope Scope, serverName string, cfg MCPEntry) error

@@ -48,10 +48,19 @@ Use --config to select an MCP configuration by name or ID without prompting.`,
 		// Override the global setupConfigName so selectConfig picks it up.
 		setupConfigName = initConfigName
 
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot determine working directory: %w", err)
+		}
+
 		for _, w := range writers {
 			fmt.Fprintf(os.Stdout, "Configuring %s (project scope)...\n", w.Name())
 			if err := runSetupForWriter(w, agent.ScopeProject); err != nil {
 				fmt.Fprintf(os.Stderr, "Error configuring %s: %v\n", w.Name(), err)
+				continue
+			}
+			if err := agent.RegisterProject(cwd, w.Name()); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to register project for %s: %v\n", w.Name(), err)
 			}
 		}
 

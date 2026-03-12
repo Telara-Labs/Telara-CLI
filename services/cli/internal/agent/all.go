@@ -21,3 +21,14 @@ func DetectedWriters() []AgentWriter {
 	}
 	return detected
 }
+
+// WriterByName returns the AgentWriter with the given canonical name, or nil
+// if no writer matches.
+func WriterByName(name string) AgentWriter {
+	for _, w := range AllWriters() {
+		if w.Name() == name {
+			return w
+		}
+	}
+	return nil
+}

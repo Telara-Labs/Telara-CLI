@@ -45,6 +45,10 @@ func (w *vscodeWriter) configPath(scope Scope) (string, error) {
 	}
 }
 
+func (w *vscodeWriter) ConfigPath(scope Scope) (string, error) {
+	return w.configPath(scope)
+}
+
 func (w *vscodeWriter) Write(scope Scope, serverName string, cfg MCPEntry) error {
 	path, err := w.configPath(scope)
 	if err != nil {
@@ -69,8 +73,3 @@ func (w *vscodeWriter) Remove(scope Scope, serverName string) error {
 	return removeEntry(path, vscodeServersKey, serverName)
 }
 
-// ConfigPath exposes the path for a given scope (used by init command for
-// gitignore advice).
-func (w *vscodeWriter) ConfigPath(scope Scope) (string, error) {
-	return w.configPath(scope)
-}
