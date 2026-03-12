@@ -1,6 +1,6 @@
 {
   "name": "@telara-cli/cli",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Telara CLI — manage your MCP configurations",
   "homepage": "https://telara.dev",
   "repository": {

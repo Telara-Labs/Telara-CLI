@@ -19,11 +19,11 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/version"
 )
 
-const (
-	primaryBaseURL             = "https://get.telara.dev"
-	githubRepo                 = "Telara-Labs/Telara-CLI"
-	githubAPILatestURL         = "https://api.github.com/repos/" + githubRepo + "/releases/latest"
-	githubReleaseDownloadURL   = "https://github.com/" + githubRepo + "/releases/download"
+// URL variables for the update sources. Tests override these to use httptest servers.
+var (
+	primaryBaseURL           = "https://get.telara.dev"
+	githubAPILatestURL       = "https://api.github.com/repos/Telara-Labs/Telara-CLI/releases/latest"
+	githubReleaseDownloadURL = "https://github.com/Telara-Labs/Telara-CLI/releases/download"
 )
 
 var updateCmd = &cobra.Command{
@@ -67,10 +67,12 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, filename)
+	fmt.Fprintf(os.Stderr, "Trying: %s\n", primaryURL)
 	if err := downloadFile(primaryURL, archivePath); err != nil {
-		fmt.Fprintf(os.Stderr, "Primary download unavailable, trying GitHub Releases...\n")
+		fmt.Fprintf(os.Stderr, "Primary download failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Trying: %s\n", fallbackURL)
 		if err := downloadFile(fallbackURL, archivePath); err != nil {
-			return fmt.Errorf("failed to download update: %w", err)
+			return fmt.Errorf("failed to download update from both sources:\n  Primary: %s\n  Fallback: %s\n  Error: %w", primaryURL, fallbackURL, err)
 		}
 	}
 
@@ -243,12 +245,19 @@ func printInstallInstructions(ver string) {
 
 func fetchLatestVersion() (string, error) {
 	// Try primary CDN first.
-	if ver, err := fetchLatestVersionFromCDN(); err == nil {
+	ver, cdnErr := fetchLatestVersionFromCDN()
+	if cdnErr == nil {
 		return ver, nil
 	}
+	fmt.Fprintf(os.Stderr, "CDN version check failed: %v\n", cdnErr)
+	fmt.Fprintf(os.Stderr, "Falling back to GitHub Releases API...\n")
 
 	// Fall back to GitHub Releases API.
-	return fetchLatestVersionFromGitHub()
+	ver, ghErr := fetchLatestVersionFromGitHub()
+	if ghErr != nil {
+		return "", fmt.Errorf("all version sources failed:\n  CDN: %v\n  GitHub: %v", cdnErr, ghErr)
+	}
+	return ver, nil
 }
 
 func fetchLatestVersionFromCDN() (string, error) {
@@ -276,6 +285,7 @@ type githubRelease struct {
 }
 
 func fetchLatestVersionFromGitHub() (string, error) {
+	fmt.Fprintf(os.Stderr, "Fetching: %s\n", githubAPILatestURL)
 	resp, err := http.Get(githubAPILatestURL) //nolint:noctx
 	if err != nil {
 		return "", fmt.Errorf("GitHub API request failed: %w", err)
@@ -283,7 +293,8 @@ func fetchLatestVersionFromGitHub() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var release githubRelease
