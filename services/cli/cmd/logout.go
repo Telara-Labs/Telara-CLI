@@ -9,6 +9,7 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
 var logoutCmd = &cobra.Command{
@@ -19,7 +20,7 @@ var logoutCmd = &cobra.Command{
 		if err != nil {
 			// Not logged in — clean up any local file silently, treat as success
 			_ = auth.DeleteToken(prefs.APIURL)
-			fmt.Fprintln(os.Stdout, "Logged out")
+			display.PrintSuccess("Logged out")
 			return nil
 		}
 
@@ -44,7 +45,7 @@ var logoutCmd = &cobra.Command{
 			return fmt.Errorf("failed to remove local token: %w", err)
 		}
 
-		fmt.Fprintln(os.Stdout, "Logged out")
+		display.PrintSuccess("Logged out")
 		return nil
 	},
 }
@@ -213,7 +214,7 @@ func cleanupMCPConfigs(userID, tenantID string) {
 	}
 
 	if len(entries) > 0 {
-		fmt.Fprintln(os.Stdout, "MCP configs saved. They will be restored automatically when you log back in.")
+		display.PrintInfo("MCP configs saved. They will be restored automatically when you log back in.")
 	}
 }
 

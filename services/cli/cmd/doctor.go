@@ -14,6 +14,7 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/clicontext"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
 // checkResult holds the result of a single doctor check.
@@ -23,72 +24,88 @@ type checkResult struct {
 	message string
 }
 
+// runCheck wraps a check function with an animated spinner.
+// It prints the result inline and returns it for summary counting.
+func runCheck(label string, fn func() checkResult) checkResult {
+	s := display.NewSpinner()
+	s.Start(label + "...")
+	r := fn()
+	line := fmt.Sprintf("%-14s %s", r.name, r.message)
+	switch r.status {
+	case "pass":
+		s.Success(line)
+	case "fail":
+		s.Fail(line)
+	case "warn":
+		s.Stop()
+		display.PrintWarn(line)
+	case "skip":
+		s.Stop()
+		fmt.Fprintf(os.Stderr, "  %s  %s\n", display.ColorDim.Sprint(display.IconDash), display.ColorDim.Sprint(line))
+	default:
+		s.Stop()
+		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
+	return r
+}
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Check your Telara CLI configuration and environment",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var results []checkResult
 
-		// ------------------------------------------------------------------
-		// 1. Auth check
-		// ------------------------------------------------------------------
-		results = append(results, checkAuth())
+		results = append(results, runCheck("Checking auth", checkAuth))
+		results = append(results, runCheck("Checking connectivity", func() checkResult {
+			return checkConnectivity(prefs.APIURL)
+		}))
 
-		// ------------------------------------------------------------------
-		// 2. Connectivity check
-		// ------------------------------------------------------------------
-		results = append(results, checkConnectivity(prefs.APIURL))
-
-		// ------------------------------------------------------------------
-		// 3. Agent tool checks
-		// ------------------------------------------------------------------
-		results = append(results, checkAgentTools()...)
-
-		// ------------------------------------------------------------------
-		// 4. Active context check
-		// ------------------------------------------------------------------
-		results = append(results, checkActiveContext())
-
-		// ------------------------------------------------------------------
-		// 5. .gitignore check
-		// ------------------------------------------------------------------
-		results = append(results, checkGitignore())
-
-		// ------------------------------------------------------------------
-		// Print results
-		// ------------------------------------------------------------------
-		passes, failures, skips, warns := 0, 0, 0, 0
-		for _, r := range results {
-			var marker string
-			switch r.status {
-			case "pass":
-				marker = "checkmark"
-				passes++
-			case "fail":
-				marker = "FAIL"
-				failures++
-			case "skip":
-				marker = "-"
-				skips++
-			case "warn":
-				marker = "WARN"
-				warns++
-			default:
-				marker = "?"
-			}
-			// Replace "checkmark" with the unicode check character.
-			if marker == "checkmark" {
-				marker = "\u2713"
-			}
-			fmt.Fprintf(os.Stdout, "  %-14s %s %s\n", r.name, marker, r.message)
+		// Per-tool agent checks with individual spinners.
+		home, homeErr := os.UserHomeDir()
+		for _, tool := range agentToolDefs {
+			tool := tool // capture
+			results = append(results, runCheck("Checking "+tool.name, func() checkResult {
+				if homeErr != nil {
+					return checkResult{name: tool.name, status: "fail", message: "cannot determine home directory"}
+				}
+				return checkAgentTool(home, tool)
+			}))
 		}
 
-		fmt.Fprintln(os.Stdout, "")
-		summary := fmt.Sprintf("%d skipped, %d issues found", skips+warns, failures)
+		results = append(results, runCheck("Checking context", checkActiveContext))
+		results = append(results, runCheck("Checking gitignore", checkGitignore))
+
+		// Summary.
+		passes, failures, skips, warns := 0, 0, 0, 0
+		authFailed := false
+		for _, r := range results {
+			switch r.status {
+			case "pass":
+				passes++
+			case "fail":
+				failures++
+				if r.name == "auth" {
+					authFailed = true
+				}
+			case "skip":
+				skips++
+			case "warn":
+				warns++
+			}
+		}
+
+		fmt.Fprintln(os.Stderr)
+		summary := fmt.Sprintf("%d passed, %d skipped, %d issues found", passes, skips+warns, failures)
 		if failures == 0 && warns == 0 {
-			fmt.Fprintln(os.Stdout, summary)
+			display.PrintSuccess(summary)
 		} else {
-			fmt.Fprintln(os.Stdout, summary)
+			display.PrintError(summary)
+		}
+
+		if authFailed {
+			display.ShowHints("", []display.ActionHint{
+				{Label: "Sign in", Command: []string{"telara", "login"}, Description: "telara login"},
+			})
 		}
 		return nil
 	},
@@ -190,49 +207,50 @@ var agentToolDefs = []agentToolDef{
 	},
 }
 
+// checkAgentTool checks a single agent tool installation.
+func checkAgentTool(home string, tool agentToolDef) checkResult {
+	toolDir := filepath.Join(home, tool.configDir)
+	if _, err := os.Stat(toolDir); os.IsNotExist(err) {
+		return checkResult{
+			name:    tool.name,
+			status:  "skip",
+			message: "not installed",
+		}
+	}
+
+	settingsPath := filepath.Join(toolDir, tool.settingRel)
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return checkResult{
+			name:    tool.name,
+			status:  "warn",
+			message: fmt.Sprintf("installed, settings file not found (%s)", tool.settingRel),
+		}
+	}
+
+	if strings.Contains(strings.ToLower(string(data)), "telara") {
+		return checkResult{
+			name:    tool.name,
+			status:  "pass",
+			message: "installed, telara configured",
+		}
+	}
+	return checkResult{
+		name:    tool.name,
+		status:  "warn",
+		message: "installed, no telara entry found in settings",
+	}
+}
+
+// checkAgentTools runs all agent tool checks and returns the results.
 func checkAgentTools() []checkResult {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return []checkResult{{name: "agent-tools", status: "fail", message: "cannot determine home directory"}}
 	}
-
 	var results []checkResult
 	for _, tool := range agentToolDefs {
-		toolDir := filepath.Join(home, tool.configDir)
-		if _, err := os.Stat(toolDir); os.IsNotExist(err) {
-			results = append(results, checkResult{
-				name:    tool.name,
-				status:  "skip",
-				message: "not installed",
-			})
-			continue
-		}
-
-		// Tool directory exists — check if the settings file mentions "telara".
-		settingsPath := filepath.Join(toolDir, tool.settingRel)
-		data, err := os.ReadFile(settingsPath)
-		if err != nil {
-			results = append(results, checkResult{
-				name:    tool.name,
-				status:  "warn",
-				message: fmt.Sprintf("installed, settings file not found (%s)", tool.settingRel),
-			})
-			continue
-		}
-
-		if strings.Contains(strings.ToLower(string(data)), "telara") {
-			results = append(results, checkResult{
-				name:    tool.name,
-				status:  "pass",
-				message: "installed, telara configured",
-			})
-		} else {
-			results = append(results, checkResult{
-				name:    tool.name,
-				status:  "warn",
-				message: "installed, no telara entry found in settings",
-			})
-		}
+		results = append(results, checkAgentTool(home, tool))
 	}
 	return results
 }

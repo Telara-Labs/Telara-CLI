@@ -148,13 +148,12 @@ var contextCreateCmd = &cobra.Command{
 			return fmt.Errorf("save context: %w", err)
 		}
 
-		fmt.Fprintln(os.Stdout, "Context created:", name)
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "WARNING: Save this key now — it will not be shown again.")
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "  Key:", keyResp.RawKey)
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "  MCP URL:", keyResp.MCPURL)
+		display.PrintSuccess("Context created: " + name)
+		fmt.Fprintln(os.Stdout)
+		display.PrintWarn("Save this key now — it will not be shown again.")
+		fmt.Fprintln(os.Stdout)
+		display.PrintKV(os.Stdout, "Key:", keyResp.RawKey)
+		display.PrintKVHighlight(os.Stdout, "MCP URL:", keyResp.MCPURL)
 		return nil
 	},
 }
@@ -189,7 +188,7 @@ var contextUseCmd = &cobra.Command{
 		if err := store.SetActive(args[0]); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stdout, "Switched to context %q.\n", args[0])
+		display.PrintSuccess(fmt.Sprintf("Switched to context %q.", args[0]))
 		return nil
 	},
 }
@@ -219,12 +218,12 @@ var contextCurrentCmd = &cobra.Command{
 		if c.ScopeID != "" {
 			scope = c.ScopeType + "/" + c.ScopeID
 		}
-		fmt.Fprintf(os.Stdout, "Name:       %s\n", c.Name)
-		fmt.Fprintf(os.Stdout, "Config:     %s (%s)\n", c.ConfigName, c.ConfigID)
-		fmt.Fprintf(os.Stdout, "Scope:      %s\n", scope)
-		fmt.Fprintf(os.Stdout, "Key Prefix: %s\n", c.APIKeyPrefix)
-		fmt.Fprintf(os.Stdout, "Key ID:     %s\n", c.APIKeyID)
-		fmt.Fprintf(os.Stdout, "MCP URL:    %s\n", c.MCPURL)
+		display.PrintKV(os.Stdout, "Name:", c.Name)
+		display.PrintKV(os.Stdout, "Config:", fmt.Sprintf("%s (%s)", c.ConfigName, c.ConfigID))
+		display.PrintKV(os.Stdout, "Scope:", scope)
+		display.PrintKV(os.Stdout, "Key Prefix:", c.APIKeyPrefix)
+		display.PrintKV(os.Stdout, "Key ID:", c.APIKeyID)
+		display.PrintKVHighlight(os.Stdout, "MCP URL:", c.MCPURL)
 		return nil
 	},
 }
@@ -264,7 +263,7 @@ var contextDeleteCmd = &cobra.Command{
 		if err := store.Delete(name); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stdout, "Context %q deleted.\n", name)
+		display.PrintSuccess(fmt.Sprintf("Context %q deleted.", name))
 		return nil
 	},
 }

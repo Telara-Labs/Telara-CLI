@@ -12,7 +12,7 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
-	"golang.org/x/term"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
 var loginToken string
@@ -78,15 +78,18 @@ func runDeviceFlowLogin() error {
 	// Attempt to open the browser automatically — ignore failures.
 	openBrowser(verifyURL)
 
-	fmt.Fprintln(os.Stdout, "Waiting for authorization...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
+	spinner := display.NewSpinner()
+	spinner.Start("Waiting for browser authorization")
+
 	token, err := auth.PollForToken(ctx, client, result.DeviceCode, result.Interval)
 	if err != nil {
+		spinner.Fail("Authorization failed")
 		return fmt.Errorf("authorization failed: %w", err)
 	}
+	spinner.Success("Authorized")
 
 	// Validate the token and fetch identity.
 	authedClient := api.NewClient(prefs.APIURL, token)
@@ -109,46 +112,18 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 }
 
 // printLoginBanner prints the Telera logo, auth identity, and quick-start commands.
-// Colors are only emitted when stdout is a real terminal.
+// Colors are only emitted when stdout is a real terminal (handled by fatih/color).
 func printLoginBanner(email, orgName string) {
-	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
-
-	bold := func(s string) string {
-		if isTTY {
-			return "\033[1m" + s + "\033[0m"
-		}
-		return s
-	}
-	dim := func(s string) string {
-		if isTTY {
-			return "\033[2m" + s + "\033[0m"
-		}
-		return s
-	}
-	cyan := func(s string) string {
-		if isTTY {
-			return "\033[36m" + s + "\033[0m"
-		}
-		return s
-	}
-	purple := func(s string) string {
-		if isTTY {
-			return "\033[35m" + s + "\033[0m"
-		}
-		return s
-	}
-
 	// Logo: \telara. — backslash is part of the mark, period in brand purple.
-	logo := bold("\\telara") + purple(".")
-
-	divider := dim("────────────────────────────────────────")
+	logo := display.ColorBold.Sprint("\\telara") + display.ColorBrand.Sprint(".")
+	divider := display.ColorDim.Sprint("────────────────────────────────────────")
 
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "  "+logo)
 	fmt.Fprintln(os.Stdout, "  "+divider)
-	fmt.Fprintf(os.Stdout, "  Authenticated as %s", bold(email))
+	fmt.Fprintf(os.Stdout, "  Authenticated as %s", display.ColorBold.Sprint(email))
 	if orgName != "" {
-		fmt.Fprintf(os.Stdout, " %s", dim("· "+orgName))
+		fmt.Fprintf(os.Stdout, " %s", display.ColorDim.Sprint("· "+orgName))
 	}
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout)
@@ -164,9 +139,9 @@ func printLoginBanner(email, orgName string) {
 		{"telara doctor", "Diagnose connection issues"},
 	}
 
-	fmt.Fprintln(os.Stdout, "  "+dim("Quick start:"))
+	fmt.Fprintln(os.Stdout, "  "+display.ColorDim.Sprint("Quick start:"))
 	for _, c := range cmds {
-		fmt.Fprintf(os.Stdout, "    %-26s%s\n", cyan(c.cmd), dim(c.desc))
+		fmt.Fprintf(os.Stdout, "    %-26s%s\n", display.ColorCmd.Sprint(c.cmd), display.ColorDim.Sprint(c.desc))
 	}
 	fmt.Fprintln(os.Stdout)
 }

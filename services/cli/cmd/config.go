@@ -61,21 +61,21 @@ var configShowCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get config: %w", err)
 		}
-		fmt.Fprintf(os.Stdout, "Name:         %s\n", cfg.Name)
-		fmt.Fprintf(os.Stdout, "ID:           %s\n", cfg.ID)
-		fmt.Fprintf(os.Stdout, "Scope:        %s\n", cfg.ScopeType)
-		fmt.Fprintf(os.Stdout, "Status:       %s\n", cfg.Status)
-		fmt.Fprintf(os.Stdout, "MCP URL:      %s\n", cfg.MCPURL)
-		fmt.Fprintf(os.Stdout, "Policies:     %d\n", cfg.PolicyCount)
-		fmt.Fprintf(os.Stdout, "API Keys:     %d\n", cfg.KeyCount)
+		display.PrintKV(os.Stdout, "Name:", cfg.Name)
+		display.PrintKV(os.Stdout, "ID:", cfg.ID)
+		display.PrintKV(os.Stdout, "Scope:", cfg.ScopeType)
+		display.PrintKV(os.Stdout, "Status:", cfg.Status)
+		display.PrintKVHighlight(os.Stdout, "MCP URL:", cfg.MCPURL)
+		display.PrintKV(os.Stdout, "Policies:", fmt.Sprintf("%d", cfg.PolicyCount))
+		display.PrintKV(os.Stdout, "API Keys:", fmt.Sprintf("%d", cfg.KeyCount))
 		if len(cfg.DataSources) > 0 {
 			names := make([]string, len(cfg.DataSources))
 			for i, ds := range cfg.DataSources {
 				names[i] = ds.Name + " (" + ds.Integration + ")"
 			}
-			fmt.Fprintf(os.Stdout, "Data Sources: %s\n", strings.Join(names, ", "))
+			display.PrintKV(os.Stdout, "Data Sources:", strings.Join(names, ", "))
 		} else {
-			fmt.Fprintf(os.Stdout, "Data Sources: none\n")
+			display.PrintKV(os.Stdout, "Data Sources:", "none")
 		}
 		return nil
 	},
@@ -170,14 +170,14 @@ var configGenerateKeyCmd = &cobra.Command{
 			return fmt.Errorf("generate key: %w", err)
 		}
 
-		fmt.Fprintln(os.Stdout, "Key generated.")
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "WARNING: Save this key now — it will not be shown again.")
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintf(os.Stdout, "  Key ID:  %s\n", keyResp.KeyID)
-		fmt.Fprintf(os.Stdout, "  Prefix:  %s\n", keyResp.Prefix)
-		fmt.Fprintf(os.Stdout, "  Key:     %s\n", keyResp.RawKey)
-		fmt.Fprintf(os.Stdout, "  MCP URL: %s\n", keyResp.MCPURL)
+		display.PrintSuccess("Key generated.")
+		fmt.Fprintln(os.Stdout)
+		display.PrintWarn("Save this key now — it will not be shown again.")
+		fmt.Fprintln(os.Stdout)
+		display.PrintKV(os.Stdout, "Key ID:", keyResp.KeyID)
+		display.PrintKV(os.Stdout, "Prefix:", keyResp.Prefix)
+		display.PrintKV(os.Stdout, "Key:", keyResp.RawKey)
+		display.PrintKVHighlight(os.Stdout, "MCP URL:", keyResp.MCPURL)
 		return nil
 	},
 }
@@ -222,7 +222,7 @@ var configRevokeKeyCmd = &cobra.Command{
 		if err := client.RevokeKey(context.Background(), args[0], revokeKeyConfig); err != nil {
 			return fmt.Errorf("revoke key: %w", err)
 		}
-		fmt.Fprintf(os.Stdout, "Key %s revoked.\n", args[0])
+		display.PrintSuccess(fmt.Sprintf("Key %s revoked.", args[0]))
 		return nil
 	},
 }
@@ -273,15 +273,15 @@ var configRotateKeyCmd = &cobra.Command{
 			return fmt.Errorf("update context store: %w", err)
 		}
 
-		fmt.Fprintln(os.Stdout, "New key generated.")
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "WARNING: Save this key now — it will not be shown again.")
-		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintf(os.Stdout, "  Key ID:  %s\n", keyResp.KeyID)
-		fmt.Fprintf(os.Stdout, "  Prefix:  %s\n", keyResp.Prefix)
-		fmt.Fprintf(os.Stdout, "  Key:     %s\n", keyResp.RawKey)
-		fmt.Fprintf(os.Stdout, "  MCP URL: %s\n", keyResp.MCPURL)
-		fmt.Fprintln(os.Stdout, "")
+		display.PrintSuccess("New key generated.")
+		fmt.Fprintln(os.Stdout)
+		display.PrintWarn("Save this key now — it will not be shown again.")
+		fmt.Fprintln(os.Stdout)
+		display.PrintKV(os.Stdout, "Key ID:", keyResp.KeyID)
+		display.PrintKV(os.Stdout, "Prefix:", keyResp.Prefix)
+		display.PrintKV(os.Stdout, "Key:", keyResp.RawKey)
+		display.PrintKVHighlight(os.Stdout, "MCP URL:", keyResp.MCPURL)
+		fmt.Fprintln(os.Stdout)
 		fmt.Fprintln(os.Stdout, "Update your MCP config files with the new key, then run:")
 		fmt.Fprintf(os.Stdout, "  telara config revoke-key %s --config %s\n", oldKeyID, c.ConfigID)
 		return nil

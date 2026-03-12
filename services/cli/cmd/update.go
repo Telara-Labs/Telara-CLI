@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/version"
 )
 
@@ -33,22 +34,22 @@ var updateCmd = &cobra.Command{
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	spinner := display.NewSpinner()
+	spinner.Start("Checking for latest version")
 	latest, err := fetchLatestVersion()
 	if err != nil {
+		spinner.Fail("Version check failed")
 		return fmt.Errorf("failed to fetch latest version: %w", err)
 	}
+	spinner.Stop()
 
 	current := version.Version
-	if current == latest || current == "dev" && latest == "" {
-		fmt.Fprintf(os.Stdout, "Already on latest version (%s)\n", current)
-		return nil
-	}
-	if latest == current {
-		fmt.Fprintf(os.Stdout, "Already on latest version (%s)\n", current)
+	if current == latest || (current == "dev" && latest == "") || latest == current {
+		display.PrintSuccess(fmt.Sprintf("Already on latest version (%s)", current))
 		return nil
 	}
 
-	fmt.Fprintf(os.Stdout, "Updating from %s to %s...\n", current, latest)
+	display.PrintInfo(fmt.Sprintf("Updating from %s to %s", current, latest))
 
 	filename := buildFilename(latest)
 
@@ -67,14 +68,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, filename)
-	fmt.Fprintf(os.Stderr, "Trying: %s\n", primaryURL)
+	spinner.Start("Downloading update")
 	if err := downloadFile(primaryURL, archivePath); err != nil {
-		fmt.Fprintf(os.Stderr, "Primary download failed: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Trying: %s\n", fallbackURL)
+		spinner.UpdateMessage("Primary source failed, trying fallback")
 		if err := downloadFile(fallbackURL, archivePath); err != nil {
+			spinner.Fail("Download failed")
 			return fmt.Errorf("failed to download update from both sources:\n  Primary: %s\n  Fallback: %s\n  Error: %w", primaryURL, fallbackURL, err)
 		}
 	}
+	spinner.Success("Downloaded")
 
 	newBinaryPath := filepath.Join(tmpDir, binaryName())
 	if err := extractBinary(archivePath, newBinaryPath); err != nil {
@@ -101,7 +103,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// Remove backup on success.
 	_ = os.Remove(backupPath)
 
-	fmt.Fprintf(os.Stdout, "Updated to %s\n", latest)
+	display.PrintSuccess(fmt.Sprintf("Updated to %s", latest))
 	return nil
 }
 

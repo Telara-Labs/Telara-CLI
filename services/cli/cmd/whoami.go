@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
 var whoamiCmd = &cobra.Command{
@@ -25,12 +26,12 @@ var whoamiCmd = &cobra.Command{
 			return fmt.Errorf("failed to verify token: %w\n\nRun: telara login --token <tlrc_...>", err)
 		}
 
-		fmt.Fprintf(os.Stdout, "User:         %s\n", whoami.DisplayName)
-		fmt.Fprintf(os.Stdout, "Email:        %s\n", whoami.Email)
-		fmt.Fprintf(os.Stdout, "Organization: %s\n", whoami.OrgName)
-		fmt.Fprintf(os.Stdout, "Token prefix: %s\n", whoami.TokenPrefix)
+		display.PrintKV(os.Stdout, "User:", whoami.DisplayName)
+		display.PrintKV(os.Stdout, "Email:", whoami.Email)
+		display.PrintKV(os.Stdout, "Organization:", whoami.OrgName)
+		display.PrintKV(os.Stdout, "Token prefix:", whoami.TokenPrefix)
 		if prefs.ActiveContext != "" {
-			fmt.Fprintf(os.Stdout, "Context:      %s\n", prefs.ActiveContext)
+			display.PrintKV(os.Stdout, "Context:", prefs.ActiveContext)
 		}
 		return nil
 	},
