@@ -19,6 +19,13 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/version"
 )
 
+const (
+	primaryBaseURL             = "https://get.telara.dev"
+	githubRepo                 = "Telara-Labs/Telara-CLI"
+	githubAPILatestURL         = "https://api.github.com/repos/" + githubRepo + "/releases/latest"
+	githubReleaseDownloadURL   = "https://github.com/" + githubRepo + "/releases/download"
+)
+
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update telara CLI to the latest version",
@@ -44,7 +51,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stdout, "Updating from %s to %s...\n", current, latest)
 
 	filename := buildFilename(latest)
-	downloadURL := fmt.Sprintf("https://get.telara.dev/download/%s/%s", latest, filename)
+
+	// Try primary CDN first, fall back to GitHub Releases.
+	primaryURL := fmt.Sprintf("%s/download/%s/%s", primaryBaseURL, latest, filename)
+	tag := latest
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+	fallbackURL := fmt.Sprintf("%s/%s/%s", githubReleaseDownloadURL, tag, filename)
 
 	tmpDir, err := os.MkdirTemp("", "telara-update-*")
 	if err != nil {
@@ -53,8 +67,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, filename)
-	if err := downloadFile(downloadURL, archivePath); err != nil {
-		return fmt.Errorf("failed to download update: %w", err)
+	if err := downloadFile(primaryURL, archivePath); err != nil {
+		fmt.Fprintf(os.Stderr, "Primary download unavailable, trying GitHub Releases...\n")
+		if err := downloadFile(fallbackURL, archivePath); err != nil {
+			return fmt.Errorf("failed to download update: %w", err)
+		}
 	}
 
 	newBinaryPath := filepath.Join(tmpDir, binaryName())
@@ -86,7 +103,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// buildFilename returns the archive filename for a given version.
+// GoReleaser uses {{ .Version }} (without v prefix) in the name template,
+// so we strip the leading "v" if present.
 func buildFilename(ver string) string {
+	ver = strings.TrimPrefix(ver, "v")
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 	ext := "tar.gz"
@@ -221,7 +242,17 @@ func printInstallInstructions(ver string) {
 }
 
 func fetchLatestVersion() (string, error) {
-	resp, err := http.Get("https://get.telara.dev/latest-version") //nolint:noctx
+	// Try primary CDN first.
+	if ver, err := fetchLatestVersionFromCDN(); err == nil {
+		return ver, nil
+	}
+
+	// Fall back to GitHub Releases API.
+	return fetchLatestVersionFromGitHub()
+}
+
+func fetchLatestVersionFromCDN() (string, error) {
+	resp, err := http.Get(primaryBaseURL + "/latest-version") //nolint:noctx
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
@@ -237,6 +268,36 @@ func fetchLatestVersion() (string, error) {
 	}
 
 	return strings.TrimSpace(string(body)), nil
+}
+
+// githubRelease is the minimal structure needed from the GitHub Releases API.
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+}
+
+func fetchLatestVersionFromGitHub() (string, error) {
+	resp, err := http.Get(githubAPILatestURL) //nolint:noctx
+	if err != nil {
+		return "", fmt.Errorf("GitHub API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", fmt.Errorf("failed to parse GitHub API response: %w", err)
+	}
+
+	tag := strings.TrimSpace(release.TagName)
+	if tag == "" {
+		return "", fmt.Errorf("GitHub API returned empty tag_name")
+	}
+
+	// Strip the "v" prefix to match the version format used elsewhere.
+	return strings.TrimPrefix(tag, "v"), nil
 }
 
 // versionCacheFile is the structure stored in the version cache file.

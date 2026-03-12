@@ -8,6 +8,10 @@ REPO="Telara-Labs/Telara-CLI"
 BINARY="telara"
 INSTALL_DIR="${TELARA_INSTALL_DIR:-/usr/local/bin}"
 
+PRIMARY_BASE_URL="https://get.telara.dev"
+GITHUB_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+GITHUB_DOWNLOAD_URL="https://github.com/${REPO}/releases/download"
+
 # Detect OS and arch
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -33,20 +37,40 @@ esac
 # Get latest version
 VERSION="${TELARA_VERSION:-}"
 if [ -z "$VERSION" ]; then
-  VERSION="$(curl -fsSL "https://get.telara.dev/latest-version")"
+  # Try primary CDN first, fall back to GitHub Releases API
+  VERSION="$(curl -fsSL "${PRIMARY_BASE_URL}/latest-version" 2>/dev/null)" || {
+    echo "Primary version endpoint unavailable, trying GitHub Releases..." >&2
+    VERSION="$(curl -fsSL "${GITHUB_API_URL}" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
+  }
 fi
+
+# Strip v prefix for filename (GoReleaser uses version without v)
+VERSION_NUM="${VERSION#v}"
 
 echo "Installing telara ${VERSION} (${OS}/${ARCH})..."
 
 # Download URL
-FILENAME="${BINARY}_${VERSION#v}_${OS}_${ARCH}.tar.gz"
-URL="https://get.telara.dev/download/${VERSION}/${FILENAME}"
+FILENAME="${BINARY}_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
+
+# Ensure tag has v prefix for GitHub Releases URL
+TAG="${VERSION}"
+case "$TAG" in
+  v*) ;;
+  *)  TAG="v${TAG}" ;;
+esac
+
+PRIMARY_URL="${PRIMARY_BASE_URL}/download/${VERSION}/${FILENAME}"
+FALLBACK_URL="${GITHUB_DOWNLOAD_URL}/${TAG}/${FILENAME}"
 
 # Download and extract
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-curl -fsSL "$URL" -o "$TMP/$FILENAME"
+if ! curl -fsSL "$PRIMARY_URL" -o "$TMP/$FILENAME" 2>/dev/null; then
+  echo "Primary download unavailable, trying GitHub Releases..." >&2
+  curl -fsSL "$FALLBACK_URL" -o "$TMP/$FILENAME"
+fi
+
 tar -xzf "$TMP/$FILENAME" -C "$TMP"
 
 # Install

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const defaultAPIURL = "https://api.telara.dev"
+const defaultAPIURL = "https://www.telara.dev"
 
 // Prefs holds user-level CLI preferences persisted to config.json.
 type Prefs struct {

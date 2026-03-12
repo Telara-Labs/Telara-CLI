@@ -9,6 +9,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Binary = "telara.exe"
+$Repo = "Telara-Labs/Telara-CLI"
+$PrimaryBaseUrl = "https://get.telara.dev"
+$GitHubApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
+$GitHubDownloadUrl = "https://github.com/$Repo/releases/download"
 
 # Detect arch
 $Arch = if ([System.Environment]::Is64BitOperatingSystem) { "amd64" } else {
@@ -18,21 +22,39 @@ $Arch = if ([System.Environment]::Is64BitOperatingSystem) { "amd64" } else {
 
 # Get latest version
 if (-not $Version) {
-    $Version = (Invoke-RestMethod "https://get.telara.dev/latest-version").Trim()
+    try {
+        $Version = (Invoke-RestMethod "$PrimaryBaseUrl/latest-version").Trim()
+    } catch {
+        Write-Host "Primary version endpoint unavailable, trying GitHub Releases..." -ForegroundColor Yellow
+        $Release = Invoke-RestMethod $GitHubApiUrl
+        $Version = $Release.tag_name.Trim()
+    }
 }
 
 $VersionNum = $Version.TrimStart("v")
 Write-Host "Installing telara $Version (windows/$Arch)..."
 
 $Filename = "telara_${VersionNum}_windows_${Arch}.zip"
-$Url = "https://get.telara.dev/download/$Version/$Filename"
+
+# Ensure tag has v prefix for GitHub Releases URL
+$Tag = $Version
+if (-not $Tag.StartsWith("v")) { $Tag = "v$Tag" }
+
+$PrimaryUrl = "$PrimaryBaseUrl/download/$Version/$Filename"
+$FallbackUrl = "$GitHubDownloadUrl/$Tag/$Filename"
 
 # Download
 $Tmp = [System.IO.Path]::GetTempPath() + [System.IO.Path]::GetRandomFileName()
 New-Item -ItemType Directory -Path $Tmp | Out-Null
 
 $ZipPath = Join-Path $Tmp $Filename
-Invoke-WebRequest -Uri $Url -OutFile $ZipPath -UseBasicParsing
+
+try {
+    Invoke-WebRequest -Uri $PrimaryUrl -OutFile $ZipPath -UseBasicParsing
+} catch {
+    Write-Host "Primary download unavailable, trying GitHub Releases..." -ForegroundColor Yellow
+    Invoke-WebRequest -Uri $FallbackUrl -OutFile $ZipPath -UseBasicParsing
+}
 
 # Extract
 Expand-Archive -Path $ZipPath -DestinationPath $Tmp -Force

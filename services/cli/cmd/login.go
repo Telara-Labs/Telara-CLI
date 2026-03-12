@@ -56,7 +56,7 @@ func runDeviceFlowLogin() error {
 
 	verifyURL := result.VerificationURI
 	if verifyURL == "" {
-		verifyURL = "https://app.telara.dev/device"
+		verifyURL = "https://www.telara.dev/device"
 	}
 
 	fmt.Fprintf(os.Stdout, "Open this URL in your browser:\n  %s\n\n", verifyURL)
