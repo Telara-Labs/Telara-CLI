@@ -97,7 +97,7 @@ function download(url, dest) {
       https.get(target_url, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // Follow redirect
-          file.close();
+          res.resume();
           request(res.headers.location);
           return;
         }
