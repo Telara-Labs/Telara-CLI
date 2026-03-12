@@ -227,7 +227,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().then(() => {
+  process.exit(0);
+}).catch((err) => {
   console.error('');
   console.error('telara install failed: ' + err.message);
   console.error('');
