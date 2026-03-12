@@ -19,24 +19,27 @@ var (
 
 var provisionCmd = &cobra.Command{
 	Use:   "provision",
-	Short: "Generate MCP access keys for specific deployment scenarios",
+	Short: "Generate Telara credentials for non-interactive deployments",
+	Long: `Generates API keys and MCP endpoint config for environments where
+interactive setup isn't possible: CI/CD pipelines, Claude.ai web org
+connectors, and enterprise MDM/GPO fleet deployments.`,
 }
 
 var provisionClaudeWebCmd = &cobra.Command{
 	Use:   "claude-web",
-	Short: "Generate MCP key for Claude.ai web (Anthropic Organization Connector)",
+	Short: "Generate credentials to connect Claude.ai web to your engineering knowledge (Org Connector)",
 	RunE:  runProvisionClaudeWeb,
 }
 
 var provisionCICmd = &cobra.Command{
 	Use:   "ci",
-	Short: "Generate MCP key for CI/CD environments",
+	Short: "Generate a service account key for CI/CD pipelines (GitHub Actions, GitLab CI, etc.)",
 	RunE:  runProvisionCI,
 }
 
 var provisionManagedCmd = &cobra.Command{
 	Use:   "managed",
-	Short: "Generate managed-mcp.json for enterprise MDM/GPO deployment",
+	Short: "Generate a managed-mcp.json for fleet-wide AI tool deployment via MDM or GPO",
 	RunE:  runProvisionManaged,
 }
 

@@ -24,8 +24,17 @@ var (
 func IsVerbose() bool { return verbose }
 
 var rootCmd = &cobra.Command{
-	Use:           "telara",
-	Short:         "Telara CLI — manage your MCP configurations",
+	Use:   "telara",
+	Short: "Telara CLI — scoped knowledge and tooling for your AI coding assistant",
+	Long: `Telara is a secure MCP server that gives agentic coding tools (Claude Code, Cursor,
+Windsurf, VS Code) two things: searchable knowledge from your engineering stack
+(repos, Jira, Confluence, Slack, etc.) and live tooling against your integrations
+— all governed by configurable access controls and policies.
+
+Get started:
+  telara login                Sign in to your Telara workspace
+  telara setup claude-code    Connect Claude Code to your stack
+  telara doctor               Verify the connection is working`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {

@@ -20,7 +20,7 @@ var loginForce bool
 
 var loginCmd = &cobra.Command{
 	Use:     "login",
-	Short:   "Authenticate with the Telara API",
+	Short:   "Sign in to Telara to access your organization's engineering knowledge",
 	Example: "  telara login\n  telara login --token tlrc_abc123...\n  telara login --force",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Re-auth guard: check if already logged in (unless --force).
@@ -141,7 +141,7 @@ func printLoginBanner(email, orgName string) {
 
 	fmt.Fprintln(os.Stdout, "  "+display.ColorDim.Sprint("Quick start:"))
 	for _, c := range cmds {
-		fmt.Fprintf(os.Stdout, "    %-26s%s\n", display.ColorCmd.Sprint(c.cmd), display.ColorDim.Sprint(c.desc))
+		fmt.Fprintf(os.Stdout, "    %-26s %s\n", display.ColorCmd.Sprint(c.cmd), display.ColorDim.Sprint(c.desc))
 	}
 	fmt.Fprintln(os.Stdout)
 }

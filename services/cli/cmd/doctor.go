@@ -51,7 +51,10 @@ func runCheck(label string, fn func() checkResult) checkResult {
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Check your Telara CLI configuration and environment",
+	Short: "Verify your login, active connection, and editor configuration",
+	Long: `Checks auth, API reachability, active context validity, installed editors,
+and whether config files containing API keys are properly git-ignored.
+Run this first when your AI tool isn't seeing your integrations or knowledge.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var results []checkResult
 

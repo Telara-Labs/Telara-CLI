@@ -13,7 +13,7 @@ import (
 
 var whoamiCmd = &cobra.Command{
 	Use:   "whoami",
-	Short: "Show currently authenticated user",
+	Short: "Show who you are logged in as and which organization you belong to",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
 		if err != nil {

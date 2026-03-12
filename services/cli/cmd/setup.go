@@ -25,7 +25,10 @@ func toolKeyName(toolName string) string {
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Configure agent tools to use Telara MCP",
+	Short: "Connect an agentic coding tool to your Telara integrations and knowledge",
+	Long: `Writes the Telara MCP server entry into your AI tool's global config file,
+giving it access to the integrations, tools, and knowledge defined in the
+selected configuration. Run without a subcommand for interactive setup.`,
 	// Interactive mode when no subcommand is provided.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInteractiveSetup()
@@ -225,7 +228,7 @@ func pickTools(detected []agent.AgentWriter) ([]string, error) {
 
 var setupClaudeCodeCmd = &cobra.Command{
 	Use:   "claude-code",
-	Short: "Configure Claude Code to use Telara MCP",
+	Short: "Give Claude Code access to your codebase, tickets, and docs via Telara",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := agent.NewClaudeCodeWriter()
 		scope := agent.ScopeGlobal
@@ -242,7 +245,7 @@ var setupClaudeCodeCmd = &cobra.Command{
 
 var setupCursorCmd = &cobra.Command{
 	Use:   "cursor",
-	Short: "Configure Cursor to use Telara MCP",
+	Short: "Give Cursor access to your codebase, tickets, and docs via Telara",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := agent.NewCursorWriter()
 		if err := runSetupForWriter(w, agent.ScopeGlobal); err != nil {
@@ -255,7 +258,7 @@ var setupCursorCmd = &cobra.Command{
 
 var setupWindsurfCmd = &cobra.Command{
 	Use:   "windsurf",
-	Short: "Configure Windsurf to use Telara MCP",
+	Short: "Give Windsurf access to your codebase, tickets, and docs via Telara",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := agent.NewWindsurfWriter()
 		if err := runSetupForWriter(w, agent.ScopeGlobal); err != nil {
@@ -268,7 +271,7 @@ var setupWindsurfCmd = &cobra.Command{
 
 var setupVSCodeCmd = &cobra.Command{
 	Use:   "vscode",
-	Short: "Configure VS Code to use Telara MCP (project scope only)",
+	Short: "Give VS Code access to your codebase, tickets, and docs via Telara (project scope)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := agent.NewVSCodeWriter()
 		// VS Code only supports project-scope MCP config.
@@ -288,7 +291,7 @@ var setupVSCodeCmd = &cobra.Command{
 
 var setupAllCmd = &cobra.Command{
 	Use:   "all",
-	Short: "Configure all detected agent tools to use Telara MCP",
+	Short: "Give all detected agentic coding tools access to your engineering knowledge base",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		detected := agent.DetectedWriters()
 		if len(detected) == 0 {

@@ -55,7 +55,7 @@ telara doctor
 
 ## What it does
 
-Telara CLI connects your AI coding tools to your organization's MCP (Model Context Protocol) configurations. It handles:
+Telara CLI connects your agentic coding tools to your organization's MCP (Model Context Protocol) configurations. It handles:
 
 - **Authentication** — device flow (browser) or token-based login
 - **MCP configuration management** — list, inspect, and manage API keys for your MCP configs

@@ -20,7 +20,11 @@ import (
 
 var contextCmd = &cobra.Command{
 	Use:   "context",
-	Short: "Manage Telara contexts (named config + API key pairs)",
+	Short: "Manage locally saved connections (config + API key) to your Telara workspace",
+	Long: `A context pairs a Telara configuration with a locally stored API key — like a
+kubectl context. Switch between them to change which integrations and tools your
+AI assistant can reach. The active context is what 'telara setup' and 'telara
+init' write into your editor's config file.`,
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +33,7 @@ var contextCmd = &cobra.Command{
 
 var contextListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List saved contexts",
+	Short: "List saved connections and which one is active",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		store, err := newContextStore()
 		if err != nil {
@@ -74,7 +78,7 @@ var (
 
 var contextCreateCmd = &cobra.Command{
 	Use:   "create <name>",
-	Short: "Create a new context (generates an API key for an MCP config)",
+	Short: "Save a new named connection (generates an API key for the chosen profile)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -178,7 +182,7 @@ func parseScopeFlag(flag, defaultType, defaultID string) (string, string) {
 
 var contextUseCmd = &cobra.Command{
 	Use:   "use <name>",
-	Short: "Set the active context",
+	Short: "Switch which connection your AI tools use",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		store, err := newContextStore()
@@ -199,7 +203,7 @@ var contextUseCmd = &cobra.Command{
 
 var contextCurrentCmd = &cobra.Command{
 	Use:   "current",
-	Short: "Show the active context",
+	Short: "Show which connection is currently active",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := clicontext.Resolve(rootContext, prefs.ActiveContext)
 		if name == "" {
@@ -234,7 +238,7 @@ var contextCurrentCmd = &cobra.Command{
 
 var contextDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
-	Short: "Delete a saved context",
+	Short: "Remove a saved connection",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]

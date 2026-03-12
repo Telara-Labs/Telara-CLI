@@ -14,12 +14,11 @@ var initToolFlag string
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Write project-scope MCP config for detected (or specified) agent tools",
-	Long: `telara init writes MCP server configuration into project-local config files
-(e.g. .claude/settings.json, .cursor/mcp.json) in the current directory.
-
-Use --tool to target specific tools; omit it to configure all detected tools.
-Use --config to select an MCP configuration by name or ID without prompting.`,
+	Short: "Connect agentic coding tools to Telara for this repo (project-scoped)",
+	Long: `Like 'telara setup' but writes config into the current directory instead of
+globally — so this repo's AI tools connect to a different Telara configuration
+than your global default. Useful when teams or projects have different
+integration access. Add the generated files to .gitignore.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Resolve the set of writers to use.
 		var writers []agent.AgentWriter

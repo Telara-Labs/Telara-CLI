@@ -14,12 +14,17 @@ import (
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage MCP configurations",
+	Short: "Manage server-side access profiles (integrations, tools, and policies)",
+	Long: `A configuration defines what your AI tool can see and do: which integrations
+are connected (GitHub, Jira, Confluence, Slack, etc.), which tools and actions
+are exposed, and which governance policies apply. Scoped to a tenant, team, or
+project. Managed in the Telara web app — use this command to inspect, key, and
+rotate credentials.`,
 }
 
 var configListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List accessible MCP configurations",
+	Short: "List knowledge access profiles you can connect to",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
 		if err != nil {
@@ -49,7 +54,7 @@ var configListCmd = &cobra.Command{
 
 var configShowCmd = &cobra.Command{
 	Use:   "show <name-or-id>",
-	Short: "Show details of an MCP configuration",
+	Short: "Show data sources, policies, and keys for a knowledge access profile",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
@@ -87,7 +92,7 @@ var configShowCmd = &cobra.Command{
 
 var configKeysCmd = &cobra.Command{
 	Use:   "keys <name-or-id>",
-	Short: "List API keys for an MCP configuration",
+	Short: "List active API keys issued for a knowledge access profile",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
@@ -138,7 +143,7 @@ var (
 
 var configGenerateKeyCmd = &cobra.Command{
 	Use:   "generate-key <name-or-id>",
-	Short: "Generate a new API key for an MCP configuration",
+	Short: "Generate a new API key to connect a tool to a knowledge access profile",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
@@ -207,7 +212,7 @@ var revokeKeyConfig string
 
 var configRevokeKeyCmd = &cobra.Command{
 	Use:   "revoke-key <key-id>",
-	Short: "Revoke an API key",
+	Short: "Revoke an API key (disconnects any tool using it immediately)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if revokeKeyConfig == "" {
@@ -233,7 +238,7 @@ var configRevokeKeyCmd = &cobra.Command{
 
 var configRotateKeyCmd = &cobra.Command{
 	Use:   "rotate-key <context-name>",
-	Short: "Rotate the API key for a saved context",
+	Short: "Replace the API key for a saved connection without re-running setup",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
