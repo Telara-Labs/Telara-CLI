@@ -264,10 +264,15 @@ var contextDeleteCmd = &cobra.Command{
 			}
 		}
 
+		c, getErr := store.Get(name)
 		if err := store.Delete(name); err != nil {
 			return err
 		}
 		display.PrintSuccess(fmt.Sprintf("Context %q deleted.", name))
+		if getErr == nil && c.APIKeyID != "" {
+			display.PrintWarn(fmt.Sprintf("API key %s (%s) is still active on the platform.", c.APIKeyID, c.APIKeyPrefix))
+			fmt.Fprintf(os.Stdout, "  To revoke it: telara config revoke-key %s --config %s\n", c.APIKeyID, c.ConfigID)
+		}
 		return nil
 	},
 }

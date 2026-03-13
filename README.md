@@ -1,6 +1,17 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+  <img alt="Telara" src="docs/logo-light.png" height="52">
+</picture>
+
 # Telara CLI
 
-The official command-line interface for [Telara](https://telara.dev). Manage MCP configurations, generate API keys, and set up agent tools like Claude Code, Cursor, Windsurf, and VS Code — all from your terminal.
+The official command-line interface for [Telara](https://telara.dev). Connect your AI coding tools to your organization's MCP configurations — manage access, generate keys, and configure Claude Code, Cursor, Windsurf, and VS Code in seconds.
+
+[![npm](https://img.shields.io/npm/v/@telara-cli/cli?label=npm&color=7c3aed)](https://www.npmjs.com/package/@telara-cli/cli)
+[![GitHub release](https://img.shields.io/github/v/release/Telara-Labs/Telara-CLI?label=release&color=7c3aed)](https://github.com/Telara-Labs/Telara-CLI/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-7c3aed.svg)](LICENSE)
+
+---
 
 ## Installation
 
@@ -8,6 +19,12 @@ The official command-line interface for [Telara](https://telara.dev). Manage MCP
 
 ```bash
 npm install -g @telara-cli/cli
+```
+
+### Homebrew
+
+```bash
+brew install Telara-Labs/tap/telara
 ```
 
 ### Shell script
@@ -20,15 +37,9 @@ curl -fsSL https://get.telara.dev/install.sh | sh
 irm https://get.telara.dev/windows | iex
 ```
 
-### Homebrew
-
-```bash
-brew install Telara-Labs/tap/telara
-```
-
 ### GitHub Releases
 
-Download pre-built binaries for your platform from the [releases page](https://github.com/Telara-Labs/Telara-CLI/releases).
+Download pre-built binaries from the [releases page](https://github.com/Telara-Labs/Telara-CLI/releases).
 
 | Platform | Architectures |
 |----------|--------------|
@@ -36,93 +47,118 @@ Download pre-built binaries for your platform from the [releases page](https://g
 | Linux | x86_64, ARM64 |
 | Windows | x86_64, ARM64 |
 
+---
+
 ## Quick start
 
 ```bash
-# 1. Generate a token at https://app.telara.dev/settings?tab=developer
-
-# 2. Authenticate
-telara login --token <your-token>
-#   or use browser-based device flow:
+# 1. Log in (browser-based device flow)
 telara login
 
-# 3. Set up your agent tools (auto-detects installed tools)
+#    — or use a token directly:
+telara login --token <tlrc_...>
+
+# 2. Set up your agent tools (auto-detects Claude Code, Cursor, Windsurf, VS Code)
 telara setup
 
-# 4. Verify everything is working
+# 3. Verify everything is working
 telara doctor
 ```
 
-## What it does
-
-Telara CLI connects your agentic coding tools to your organization's MCP (Model Context Protocol) configurations. It handles:
-
-- **Authentication** — device flow (browser) or token-based login
-- **MCP configuration management** — list, inspect, and manage API keys for your MCP configs
-- **Agent tool setup** — auto-detect and configure Claude Code, Cursor, Windsurf, and VS Code
-- **Context management** — switch between environments with named (config + key) pairs
-- **Provisioning** — generate keys for Claude.ai web, CI/CD pipelines, and enterprise MDM deployment
-- **Diagnostics** — `telara doctor` checks auth, connectivity, tool configs, and security
+---
 
 ## Commands
 
-```
-telara login                       Authenticate with Telara
-telara logout                      Revoke token and remove credentials
-telara whoami                      Show current user and org
+### Authentication
 
-telara config list                 List MCP configurations
-telara config show <name>          Show config details and MCP URL
-telara config keys <name>          List API keys
-telara config generate-key <name>  Generate a new API key
-telara config revoke-key <id>      Revoke an API key
-telara config rotate-key <ctx>     Rotate key for a saved context
+| Command | Description |
+|---------|-------------|
+| `telara login` | Authenticate via browser (device flow) or `--token <tlrc_...>` |
+| `telara logout` | Revoke token, snapshot MCP configs, and remove local credentials |
+| `telara whoami` | Show current user, org, token prefix, and active context |
 
-telara setup                       Interactive agent tool setup
-telara setup claude-code           Configure Claude Code
-telara setup cursor                Configure Cursor
-telara setup windsurf              Configure Windsurf
-telara setup vscode                Configure VS Code
-telara setup all                   Configure all detected tools
-telara init                        Write project-scoped MCP config
+### MCP configuration management
 
-telara context list                List saved contexts
-telara context create <name>       Create context with generated key
-telara context use <name>          Switch active context
-telara context current             Show active context and MCP URL
-telara context delete <name>       Delete a saved context
+| Command | Description |
+|---------|-------------|
+| `telara config list` | List MCP configurations accessible to you |
+| `telara config show <name>` | Show data sources, policies, key count, and MCP URL |
+| `telara config keys <name>` | List active API keys with scope and expiry |
+| `telara config generate-key <name>` | Generate a new API key (`--expires 30d\|90d\|1yr\|never`) |
+| `telara config revoke-key <key-id> --config <id>` | Revoke an API key immediately |
+| `telara config rotate-key <context-name>` | Generate a replacement key and auto-revoke the old one |
 
-telara provision claude-web        Key for Claude.ai Organization Connector
-telara provision ci                Key for CI/CD environments
-telara provision managed           Config for enterprise MDM/GPO deployment
+### Agent tool setup
 
-telara doctor                      Check environment and configuration
-telara version                     Print version info
-telara update                      Update to latest version
-```
+| Command | Description |
+|---------|-------------|
+| `telara setup` | Interactive setup — auto-detects and configures all installed tools |
+| `telara setup claude-code` | Configure Claude Code (`--managed` for enterprise MDM) |
+| `telara setup cursor` | Configure Cursor |
+| `telara setup windsurf` | Configure Windsurf |
+| `telara setup vscode` | Configure VS Code |
+| `telara setup all` | Configure all detected tools at once |
+| `telara init` | Write a project-scoped MCP config for the current directory |
+
+### Contexts
+
+A context is a named (config + API key) pair. Switch between them to change which integrations and tools your AI assistant can reach.
+
+| Command | Description |
+|---------|-------------|
+| `telara context list` | List saved contexts, with active marker |
+| `telara context create <name>` | Create a context — prompts for config, generates a scoped key |
+| `telara context use <name>` | Switch the active context |
+| `telara context current` | Show active context details and MCP URL |
+| `telara context delete <name>` | Remove a saved context (warns if the key is still active) |
+
+### Provisioning
+
+Generate MCP access keys for specific deployment scenarios.
+
+| Command | Description |
+|---------|-------------|
+| `telara provision claude-web` | Key for Claude.ai (Anthropic Organization Connector) |
+| `telara provision ci` | Key for CI/CD environments (GitHub Actions, GitLab CI, etc.) |
+| `telara provision managed` | Config for enterprise MDM / GPO deployment |
+
+### Diagnostics & utilities
+
+| Command | Description |
+|---------|-------------|
+| `telara doctor` | Check connectivity, auth, tool configs, contexts, and key health |
+| `telara version` | Print version, commit hash, and build date |
+| `telara update` | Self-update to the latest release |
+
+---
 
 ## Global flags
 
-```
---api-url    Override the Telara API base URL
---context    Use a specific context for this command
--v           Print full HTTP responses on errors
-```
+| Flag | Description |
+|------|-------------|
+| `--api-url <url>` | Override the Telara API base URL |
+| `--context <name>` | Use a specific context for this command |
+| `-v, --verbose` | Print full HTTP responses on errors |
 
-## Supported tools
+---
 
-| Tool | Global setup | Project setup |
-|------|-------------|---------------|
+## Supported agent tools
+
+| Tool | Global setup | Project setup (`init`) |
+|------|-------------|----------------------|
 | Claude Code | `telara setup claude-code` | `telara init --tool claude-code` |
 | Cursor | `telara setup cursor` | `telara init --tool cursor` |
 | Windsurf | `telara setup windsurf` | `telara init --tool windsurf` |
-| VS Code | project only | `telara setup vscode` / `telara init --tool vscode` |
+| VS Code | `telara setup vscode` | `telara init --tool vscode` |
+
+---
 
 ## System requirements
 
-- macOS, Linux, or Windows
-- x86_64 or ARM64 architecture
-- Node.js >= 14 (for npm installation method only)
+- macOS, Linux, or Windows (x86_64 or ARM64)
+- Node.js >= 14 (for npm installation only)
+
+---
 
 ## Development
 
@@ -133,12 +169,14 @@ go build ./cmd/server
 ./server version
 ```
 
-### Running tests
+### Tests
 
 ```bash
 cd services/cli
 go test ./... -v -timeout 60s
 ```
+
+---
 
 ## Documentation
 

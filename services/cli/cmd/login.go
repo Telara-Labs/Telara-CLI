@@ -12,6 +12,7 @@ import (
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
+	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
 	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
 )
 
@@ -105,6 +106,10 @@ func runDeviceFlowLogin() error {
 func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	if err := auth.SaveToken(prefs.APIURL, token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
+	}
+	// Persist the API URL so future sessions without TELARA_API_URL find the right token.
+	if err := config.Save(prefs); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 	printLoginBanner(whoami.Email, whoami.OrgName)
 	restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)

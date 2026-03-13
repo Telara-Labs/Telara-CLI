@@ -73,9 +73,15 @@ func runProvisionClaudeWeb(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	deployment, err := selectDeployment(client, cfg.ID)
+	if err != nil {
+		return err
+	}
+
 	keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
 		Name:      "claude-web-org-connector",
-		ScopeType: "tenant",
+		ScopeType: deployment.ScopeType,
+		ScopeID:   deployment.ScopeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate API key: %w", err)
@@ -108,9 +114,15 @@ func runProvisionCI(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	deployment, err := selectDeployment(client, cfg.ID)
+	if err != nil {
+		return err
+	}
+
 	keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
 		Name:      provisionServiceAccount,
-		ScopeType: "tenant",
+		ScopeType: deployment.ScopeType,
+		ScopeID:   deployment.ScopeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate API key: %w", err)
@@ -147,9 +159,15 @@ func runProvisionManaged(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	deployment, err := selectDeployment(client, cfg.ID)
+	if err != nil {
+		return err
+	}
+
 	keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
 		Name:      "managed-deployment",
-		ScopeType: "tenant",
+		ScopeType: deployment.ScopeType,
+		ScopeID:   deployment.ScopeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate API key: %w", err)

@@ -125,7 +125,11 @@ var configKeysCmd = &cobra.Command{
 			if expires == "" {
 				expires = "never"
 			}
-			t.AddRow(k.ID, k.Name, k.Prefix, "", k.CreatedAt, expires, status)
+			scope := k.ScopeType
+			if k.ScopeID != "" {
+				scope = k.ScopeType + "/" + k.ScopeID
+			}
+			t.AddRow(k.ID, k.Name, k.Prefix, scope, k.CreatedAt, expires, status)
 		}
 		t.Print(os.Stdout)
 		return nil
@@ -278,7 +282,13 @@ var configRotateKeyCmd = &cobra.Command{
 			return fmt.Errorf("update context store: %w", err)
 		}
 
-		display.PrintSuccess("New key generated.")
+		// Revoke the old key now that the context store is updated.
+		if err := client.RevokeKey(context.Background(), oldKeyID, c.ConfigID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: new key generated but failed to revoke old key %s: %v\n", oldKeyID, err)
+			fmt.Fprintf(os.Stderr, "Revoke it manually: telara config revoke-key %s --config %s\n", oldKeyID, c.ConfigID)
+		}
+
+		display.PrintSuccess("New key generated. Old key revoked.")
 		fmt.Fprintln(os.Stdout)
 		display.PrintWarn("Save this key now — it will not be shown again.")
 		fmt.Fprintln(os.Stdout)
@@ -286,9 +296,6 @@ var configRotateKeyCmd = &cobra.Command{
 		display.PrintKV(os.Stdout, "Prefix:", keyResp.Prefix)
 		display.PrintKV(os.Stdout, "Key:", keyResp.RawKey)
 		display.PrintKVHighlight(os.Stdout, "MCP URL:", keyResp.MCPURL)
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, "Update your MCP config files with the new key, then run:")
-		fmt.Fprintf(os.Stdout, "  telara config revoke-key %s --config %s\n", oldKeyID, c.ConfigID)
 		return nil
 	},
 }

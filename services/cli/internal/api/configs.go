@@ -2,6 +2,20 @@ package api
 
 import "context"
 
+// Deployment describes a scoped deployment of an MCP configuration.
+type Deployment struct {
+	ID        string `json:"id"`
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id"`
+	ScopeName string `json:"scope_name"`
+	IsDefault bool   `json:"is_default"`
+}
+
+// ListDeploymentsResponse is the payload returned by GET /v1/cli/configs/:id/deployments.
+type ListDeploymentsResponse struct {
+	Deployments []Deployment `json:"deployments"`
+}
+
 // MCPConfig represents a single MCP configuration returned by the API.
 type MCPConfig struct {
 	ID          string `json:"id"`
@@ -15,14 +29,14 @@ type MCPConfig struct {
 
 // ListConfigsResponse is the payload returned by GET /v1/cli/configs.
 type ListConfigsResponse struct {
-	Configs []MCPConfig `json:"configs"`
+	Configs []MCPConfig `json:"configurations"`
 }
 
 // ConfigDetail extends MCPConfig with per-configuration detail fields.
 type ConfigDetail struct {
 	MCPConfig
 	DataSources []DataSource `json:"data_sources"`
-	PolicyCount int          `json:"policy_count"`
+	PolicyCount int          `json:"policy_attachment_count"`
 	KeyCount    int          `json:"key_count"`
 }
 
@@ -34,9 +48,9 @@ type DataSource struct {
 
 // ResolveResponse is the payload returned by GET /v1/cli/configs/resolve.
 type ResolveResponse struct {
-	Managed []MCPConfig `json:"managed"`
-	User    []MCPConfig `json:"user"`
-	Project []MCPConfig `json:"project"`
+	Managed   []MCPConfig `json:"managed"`
+	User      []MCPConfig `json:"user"`
+	Available []MCPConfig `json:"available"`
 }
 
 // ListConfigs fetches all MCP configurations accessible to the authenticated user.
@@ -62,6 +76,15 @@ func (c *Client) GetConfig(ctx context.Context, idOrName string) (*ConfigDetail,
 func (c *Client) ResolveConfigs(ctx context.Context) (*ResolveResponse, error) {
 	var resp ResolveResponse
 	if err := c.do(ctx, "GET", "/v1/cli/configs/resolve", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ListDeployments fetches the deployments accessible to the current user for the given config ID.
+func (c *Client) ListDeployments(ctx context.Context, configID string) (*ListDeploymentsResponse, error) {
+	var resp ListDeploymentsResponse
+	if err := c.do(ctx, "GET", "/v1/cli/configs/"+configID+"/deployments", nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

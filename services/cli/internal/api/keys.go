@@ -9,7 +9,9 @@ import (
 type APIKey struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Prefix    string `json:"prefix"`
+	Prefix    string `json:"key_prefix"`
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id"`
 	CreatedAt string `json:"created_at"`
 	ExpiresAt string `json:"expires_at"`
 	LastUsed  string `json:"last_used_at"`
@@ -27,9 +29,9 @@ type GenerateKeyRequest struct {
 // GenerateKeyResponse is the response body from generating a new API key.
 // RawKey is only returned once at creation time.
 type GenerateKeyResponse struct {
-	KeyID  string `json:"key_id"`
+	KeyID  string `json:"id"`
 	RawKey string `json:"raw_key"`
-	Prefix string `json:"prefix"`
+	Prefix string `json:"key_prefix"`
 	MCPURL string `json:"mcp_url"`
 }
 

@@ -38,6 +38,40 @@ selected configuration. Run without a subcommand for interactive setup.`,
 var setupConfigName string
 var setupManaged bool
 
+// selectDeployment fetches the accessible deployments for the given config and either
+// returns the only one silently, errors if there are none, or prompts the user to pick.
+func selectDeployment(client *api.Client, configID string) (*api.Deployment, error) {
+	resp, err := client.ListDeployments(context.Background(), configID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list deployments: %w", err)
+	}
+	switch len(resp.Deployments) {
+	case 0:
+		return nil, fmt.Errorf("no deployments available for this configuration — ask your admin to deploy it to your scope")
+	case 1:
+		return &resp.Deployments[0], nil
+	}
+
+	options := make([]string, len(resp.Deployments))
+	for i, d := range resp.Deployments {
+		options[i] = d.ScopeName
+	}
+	var chosen string
+	prompt := &survey.Select{
+		Message: "Select deployment scope:",
+		Options: options,
+	}
+	if err := survey.AskOne(prompt, &chosen); err != nil {
+		return nil, fmt.Errorf("selection cancelled: %w", err)
+	}
+	for i, name := range options {
+		if name == chosen {
+			return &resp.Deployments[i], nil
+		}
+	}
+	return nil, fmt.Errorf("deployment selection not found")
+}
+
 // runSetupForWriter runs the full setup flow for a single AgentWriter using the
 // given scope. It prompts for config selection if setupConfigName is empty.
 func runSetupForWriter(w agent.AgentWriter, scope agent.Scope) error {
@@ -52,10 +86,15 @@ func runSetupForWriter(w agent.AgentWriter, scope agent.Scope) error {
 		return err
 	}
 
+	deployment, err := selectDeployment(client, selectedConfig.ID)
+	if err != nil {
+		return err
+	}
+
 	keyResp, err := client.GenerateKey(context.Background(), selectedConfig.ID, api.GenerateKeyRequest{
 		Name:      toolKeyName(w.Name()),
-		ScopeType: "tenant",
-		ScopeID:   "",
+		ScopeType: deployment.ScopeType,
+		ScopeID:   deployment.ScopeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate API key: %w", err)

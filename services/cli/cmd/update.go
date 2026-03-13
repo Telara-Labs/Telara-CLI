@@ -246,20 +246,7 @@ func printInstallInstructions(ver string) {
 }
 
 func fetchLatestVersion() (string, error) {
-	// Try primary CDN first.
-	ver, cdnErr := fetchLatestVersionFromCDN()
-	if cdnErr == nil {
-		return ver, nil
-	}
-	fmt.Fprintf(os.Stderr, "CDN version check failed: %v\n", cdnErr)
-	fmt.Fprintf(os.Stderr, "Falling back to GitHub Releases API...\n")
-
-	// Fall back to GitHub Releases API.
-	ver, ghErr := fetchLatestVersionFromGitHub()
-	if ghErr != nil {
-		return "", fmt.Errorf("all version sources failed:\n  CDN: %v\n  GitHub: %v", cdnErr, ghErr)
-	}
-	return ver, nil
+	return fetchLatestVersionFromGitHub()
 }
 
 func fetchLatestVersionFromCDN() (string, error) {
