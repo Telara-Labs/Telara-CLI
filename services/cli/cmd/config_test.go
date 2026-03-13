@@ -45,6 +45,7 @@ func setupTestPrefs(t *testing.T, apiURL string) func() {
 	t.Setenv("HOME", tmpDir)
 
 	prefs = &config.Prefs{APIURL: apiURL}
+	disableBackgroundVersionCheck = true
 
 	if err := auth.SaveToken(apiURL, "tlrc_testtoken0000000000"); err != nil {
 		t.Fatalf("SaveToken: %v", err)
@@ -52,12 +53,13 @@ func setupTestPrefs(t *testing.T, apiURL string) func() {
 
 	return func() {
 		prefs = config.DefaultPrefs()
+		disableBackgroundVersionCheck = false
 	}
 }
 
 func TestConfigList_Success(t *testing.T) {
 	configsResp := map[string]interface{}{
-		"configs": []map[string]interface{}{
+		"configurations": []map[string]interface{}{
 			{
 				"id": "abc-123", "name": "my-config", "scope_type": "tenant",
 				"scope_id": "", "data_source_count": 2, "status": "active",

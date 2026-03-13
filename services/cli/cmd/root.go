@@ -18,6 +18,10 @@ var (
 	verbose     bool
 	caCertPath  string
 	prefs       *config.Prefs
+
+	// disableBackgroundVersionCheck suppresses the fire-and-forget goroutine.
+	// Set to true in tests to prevent data races on package-level URL vars.
+	disableBackgroundVersionCheck bool
 )
 
 // IsVerbose returns true when the --verbose flag is set.
@@ -40,7 +44,9 @@ Get started:
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		// Fire-and-forget background version check.
 		// This goroutine intentionally races against process exit.
-		go checkVersionInBackground()
+		if !disableBackgroundVersionCheck {
+			go checkVersionInBackground()
+		}
 	},
 }
 

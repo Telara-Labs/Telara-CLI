@@ -22,8 +22,7 @@ import (
 
 // URL variables for the update sources. Tests override these to use httptest servers.
 var (
-	primaryBaseURL           = "https://get.telara.dev"
-	githubAPILatestURL       = "https://api.github.com/repos/Telara-Labs/Telara-CLI/releases/latest"
+	githubAPILatestURL       = "https://api.github.com/repos/Telera-Labs/Telara-CLI/releases/latest"
 	githubReleaseDownloadURL = "https://github.com/Telara-Labs/Telara-CLI/releases/download"
 )
 
@@ -53,13 +52,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	filename := buildFilename(latest)
 
-	// Try primary CDN first, fall back to GitHub Releases.
-	primaryURL := fmt.Sprintf("%s/download/%s/%s", primaryBaseURL, latest, filename)
 	tag := latest
 	if !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
 	}
-	fallbackURL := fmt.Sprintf("%s/%s/%s", githubReleaseDownloadURL, tag, filename)
+	downloadURL := fmt.Sprintf("%s/%s/%s", githubReleaseDownloadURL, tag, filename)
 
 	tmpDir, err := os.MkdirTemp("", "telara-update-*")
 	if err != nil {
@@ -69,12 +66,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	archivePath := filepath.Join(tmpDir, filename)
 	spinner.Start("Downloading update")
-	if err := downloadFile(primaryURL, archivePath); err != nil {
-		spinner.UpdateMessage("Primary source failed, trying fallback")
-		if err := downloadFile(fallbackURL, archivePath); err != nil {
-			spinner.Fail("Download failed")
-			return fmt.Errorf("failed to download update from both sources:\n  Primary: %s\n  Fallback: %s\n  Error: %w", primaryURL, fallbackURL, err)
-		}
+	if err := downloadFile(downloadURL, archivePath); err != nil {
+		spinner.Fail("Download failed")
+		return fmt.Errorf("failed to download update: %w", err)
 	}
 	spinner.Success("Downloaded")
 
@@ -249,32 +243,12 @@ func fetchLatestVersion() (string, error) {
 	return fetchLatestVersionFromGitHub()
 }
 
-func fetchLatestVersionFromCDN() (string, error) {
-	resp, err := http.Get(primaryBaseURL + "/latest-version") //nolint:noctx
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
-	}
-
-	return strings.TrimSpace(string(body)), nil
-}
-
 // githubRelease is the minimal structure needed from the GitHub Releases API.
 type githubRelease struct {
 	TagName string `json:"tag_name"`
 }
 
 func fetchLatestVersionFromGitHub() (string, error) {
-	fmt.Fprintf(os.Stderr, "Fetching: %s\n", githubAPILatestURL)
 	resp, err := http.Get(githubAPILatestURL) //nolint:noctx
 	if err != nil {
 		return "", fmt.Errorf("GitHub API request failed: %w", err)
