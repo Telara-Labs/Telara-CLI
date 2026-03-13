@@ -116,7 +116,7 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	return nil
 }
 
-// printLoginBanner prints the Telera logo, auth identity, and quick-start commands.
+// printLoginBanner prints the Telara logo, auth identity, and quick-start commands.
 // Colors are only emitted when stdout is a real terminal (handled by fatih/color).
 func printLoginBanner(email, orgName string) {
 	// Logo: \telara. — backslash is part of the mark, period in brand purple.

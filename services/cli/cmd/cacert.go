@@ -12,17 +12,17 @@ import (
 var caCertCmd = &cobra.Command{
 	Use:   "ca-cert",
 	Short: "Extract local cluster CA certificate for TLS trust",
-	Long: `Extracts the Telera local CA certificate from the cluster.
-Save the output to a file and pass it via --ca-cert or TELERA_CA_CERT_PATH.
+	Long: `Extracts the Telara local CA certificate from the cluster.
+Save the output to a file and pass it via --ca-cert or TELARA_CA_CERT_PATH.
 
 Example:
-  telara ca-cert > ~/telera-ca.crt
-  export TELERA_CA_CERT_PATH=~/telera-ca.crt
+  telara ca-cert > ~/telara-ca.crt
+  export TELARA_CA_CERT_PATH=~/telara-ca.crt
   telara login --token tlrc_...`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out, err := exec.Command(
-			"kubectl", "get", "secret", "telera-local-ca-secret",
-			"-n", "telera-middleware",
+			"kubectl", "get", "secret", "telara-local-ca-secret",
+			"-n", "telara-middleware",
 			"-o", "jsonpath={.data.tls\\.crt}",
 		).Output()
 		if err != nil {

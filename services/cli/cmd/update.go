@@ -22,7 +22,7 @@ import (
 
 // URL variables for the update sources. Tests override these to use httptest servers.
 var (
-	githubAPILatestURL       = "https://api.github.com/repos/Telera-Labs/Telara-CLI/releases/latest"
+	githubAPILatestURL       = "https://api.github.com/repos/Telara-Labs/Telara-CLI/releases/latest"
 	githubReleaseDownloadURL = "https://github.com/Telara-Labs/Telara-CLI/releases/download"
 )
 
