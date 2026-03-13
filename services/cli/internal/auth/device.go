@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 )
 
 // DeviceFlowResult holds the response from initiating a device flow.

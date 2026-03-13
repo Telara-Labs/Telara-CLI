@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/version"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
 
 var versionCmd = &cobra.Command{

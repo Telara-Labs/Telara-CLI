@@ -17,7 +17,7 @@ info() {
 usage() {
     echo "Usage: $(basename "$0") [options]"
     echo
-    echo "This script builds, deploys, and configures the telera-middleware services."
+    echo "This script builds, deploys, and configures the telara-middleware services."
     echo
     echo "Options:"
     echo "  --proto-branch, -pb <branch> Update the protobuf definitions for all modules."
@@ -42,21 +42,21 @@ done
 find . -type f -name "go.mod" -print0 | while IFS= read -r -d $'\0' file; do
   (
     cd "$(dirname "$file")" || exit 1
-    # if telera module is in the file, then run the update-proto.sh script
-    if grep -q "gitlab.com/teleraai" "go.mod"; then
+    # if telara module is in the file, then run the update-proto.sh script
+    if grep -q "gitlab.com/telara-labs" "go.mod"; then
       echo "================================================"
       echo "Checking for updates in: $(pwd)"
       echo "================================================"
-       # OK -  Updating module: gitlab.com/teleraai/telera-utilities/go/security
+       # OK -  Updating module: gitlab.com/telara-labs/telara-utilities/go/security
        # NOT OK - Updating module: v0.0.0-20250714231219-3fded3728ec2
-      # for each telera gitlab module - update the module to the main branch
-      for module in $(grep -o "gitlab.com/teleraai/telera-[a-z\-\/]*" "go.mod"); do
+      # for each telara gitlab module - update the module to the main branch
+      for module in $(grep -o "gitlab.com/telara-labs/telara-[a-z\-\/]*" "go.mod"); do
         echo "Updating module: $module"
-        if [[ $module == *"telera-utilities"* ]]; then
+        if [[ $module == *"telara-utilities"* ]]; then
           go get $module@$UTIL_BRANCH
-        elif [[ $module == *"telera-audit"* ]]; then
+        elif [[ $module == *"telara-audit"* ]]; then
           go get $module@$AUDIT_BRANCH
-        elif [[ $module == *"telera-proto"* ]]; then
+        elif [[ $module == *"telara-proto"* ]]; then
           go get $module@$PROTO_BRANCH
         else
           go get $module@main

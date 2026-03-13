@@ -8,9 +8,9 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 )
 
 // toolKeyName returns a human-friendly API key name for a given tool,

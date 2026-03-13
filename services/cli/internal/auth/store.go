@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/zalando/go-keyring"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 const keyringService = "telara-cli"

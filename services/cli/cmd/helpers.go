@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/clicontext"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clicontext"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 // newContextStore is a convenience wrapper that opens the context store located

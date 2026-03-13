@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/agent"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 )
 
 var initConfigName string

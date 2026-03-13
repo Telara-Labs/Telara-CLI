@@ -8,10 +8,10 @@ import (
 
 	survey "github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/clicontext"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clicontext"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 )
 
 // ---------------------------------------------------------------------------

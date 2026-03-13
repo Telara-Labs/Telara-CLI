@@ -1,4 +1,4 @@
-<img alt="Telara" src="https://raw.githubusercontent.com/Telera-Labs/Telara-CLI/main/docs/logo-light.png" height="52">
+<img alt="Telara" src="https://raw.githubusercontent.com/Telara-Labs/Telara-CLI/main/docs/logo-light.png" height="52">
 
 # @telara-cli/cli
 

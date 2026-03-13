@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/version"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
 
 // URL variables for the update sources. Tests override these to use httptest servers.

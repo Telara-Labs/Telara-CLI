@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 // SnapshotEntry represents a single MCP entry that was removed during logout.

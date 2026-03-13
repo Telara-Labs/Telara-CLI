@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 // captureStdout runs fn and returns everything written to os.Stdout during the call.

@@ -1,4 +1,4 @@
-module gitlab.com/teleraai/telara-cli/services/cli
+module gitlab.com/telara-labs/telara-cli/services/cli
 
 go 1.25.0
 

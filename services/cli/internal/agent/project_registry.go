@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 // ProjectRecord tracks a project directory that has been configured with telara init.

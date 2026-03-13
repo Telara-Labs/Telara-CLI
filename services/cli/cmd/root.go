@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/config"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 )
 
 var (
@@ -146,6 +146,6 @@ func initConfig() {
 		prefs.APIURL = envURL
 	}
 	if caCertPath != "" {
-		os.Setenv("TELERA_CA_CERT_PATH", caCertPath)
+		os.Setenv("TELARA_CA_CERT_PATH", caCertPath)
 	}
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# A script to build, push, and deploy the telera-knowledge services (Phase 1 API-First Architecture).
+# A script to build, push, and deploy the telara-knowledge services (Phase 1 API-First Architecture).
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -13,8 +13,8 @@ GO_SERVICES_DIR="${REPO_ROOT}/services"
 cd "${REPO_ROOT}"
 
 # --- CONFIGURATION ---
-HELM_RELEASE_NAME="telera-knowledge"
-HELM_NAMESPACE="telera-knowledge"
+HELM_RELEASE_NAME="telara-knowledge"
+HELM_NAMESPACE="telara-knowledge"
 HELM_CHART_PATH="helm"
 
 # New Phase 1 services (API-first architecture)
@@ -57,7 +57,7 @@ NO_CACHE_FLAG=""
 usage() {
     echo "Usage: $0 [options]"
     echo
-    echo "This script builds and deploys the telera-knowledge services (Phase 1 API-First)."
+    echo "This script builds and deploys the telara-knowledge services (Phase 1 API-First)."
     echo
     echo "Options:"
     echo "  --env <env>             Target environment: 'local', 'aws', 'gcp', 'azure'. (Default: local)"
@@ -104,7 +104,7 @@ fi
 if [ "$TARGET_ENV" = "local" ]; then
     # For local deployment, use simple local prefix
     if [[ -z "$REPO_URL" ]]; then
-        REPO_URL="telera"  # Default fallback
+        REPO_URL="telara"  # Default fallback
     fi
 fi
 
@@ -126,7 +126,7 @@ if [ "$BUILD_ENABLED" = true ]; then
         service_dir="${GO_SERVICES_DIR}/${service}"
         
         if [ -d "$service_dir" ]; then
-            IMAGE_NAME="telera/${service}"
+            IMAGE_NAME="telara/${service}"
             echo "--> Building Docker image: $IMAGE_NAME:latest"
             
             dockerfile_path="${service_dir}/Dockerfile"
@@ -162,7 +162,7 @@ if [ "$PUSH_ENABLED" = true ]; then
         for service in "${SERVICES[@]}"; do
             service_dir="${GO_SERVICES_DIR}/${service}"
             if [ -d "$service_dir" ]; then
-                IMAGE_NAME="telera/${service}"
+                IMAGE_NAME="telara/${service}"
                 echo "--> Loading $IMAGE_NAME:latest into Minikube..."
                 if ! minikube image load "$IMAGE_NAME:latest"; then
                     echo "⚠️  Warning: Failed to load $IMAGE_NAME into Minikube"
@@ -177,7 +177,7 @@ if [ "$PUSH_ENABLED" = true ]; then
         for service in "${SERVICES[@]}"; do
             service_dir="${GO_SERVICES_DIR}/${service}"
             if [ -d "$service_dir" ]; then
-                LOCAL_IMAGE_NAME="telera/${service}"
+                LOCAL_IMAGE_NAME="telara/${service}"
                 REMOTE_IMAGE_NAME="${REPO_URL}/${service}"
 
                 echo "--> Tagging $LOCAL_IMAGE_NAME:latest as $REMOTE_IMAGE_NAME:latest"
@@ -222,7 +222,7 @@ if [ -d "$HELM_CHART_PATH" ]; then
     echo "--> Using values file: $VALUES_FILE"
     echo "--> Deploying to namespace: $HELM_NAMESPACE"
 
-    # Deploy the telera-knowledge chart
+    # Deploy the telara-knowledge chart
     if ! helm upgrade --install "$HELM_RELEASE_NAME" "$HELM_CHART_PATH" \
         --namespace "$HELM_NAMESPACE" \
         --create-namespace \

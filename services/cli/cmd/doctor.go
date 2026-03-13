@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/api"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/auth"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/clicontext"
-	"gitlab.com/teleraai/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clicontext"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 )
 
 // checkResult holds the result of a single doctor check.
