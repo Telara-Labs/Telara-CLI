@@ -67,3 +67,27 @@ func (w *cursorWriter) Remove(scope Scope, serverName string) error {
 	}
 	return removeEntry(path, cursorServersKey, serverName)
 }
+
+// WritePermissions sets the autoApprove field on the server entry with all
+// platform tool names.
+func (w *cursorWriter) WritePermissions(scope Scope, serverName string) error {
+	path, err := w.configPath(scope)
+	if err != nil {
+		return err
+	}
+	tools := PlatformToolNames()
+	toolList := make([]interface{}, len(tools))
+	for i, t := range tools {
+		toolList[i] = t
+	}
+	return setServerEntryField(path, cursorServersKey, serverName, "autoApprove", toolList)
+}
+
+// RemovePermissions removes the autoApprove field from the server entry.
+func (w *cursorWriter) RemovePermissions(scope Scope, serverName string) error {
+	path, err := w.configPath(scope)
+	if err != nil {
+		return err
+	}
+	return removeServerEntryField(path, cursorServersKey, serverName, "autoApprove")
+}

@@ -100,6 +100,81 @@ func mapToEntry(raw interface{}) (MCPEntry, bool) {
 	return entry, true
 }
 
+// ensureInStringList ensures that value exists in cfg[parentKey][listKey].
+// It creates the parent map and list if they don't exist.
+// Returns true if the value was added, false if it was already present.
+func ensureInStringList(cfg map[string]interface{}, parentKey, listKey, value string) bool {
+	parent, ok := cfg[parentKey].(map[string]interface{})
+	if !ok || parent == nil {
+		parent = make(map[string]interface{})
+		cfg[parentKey] = parent
+	}
+	rawList, _ := parent[listKey].([]interface{})
+	for _, item := range rawList {
+		if s, ok := item.(string); ok && s == value {
+			return false
+		}
+	}
+	parent[listKey] = append(rawList, value)
+	return true
+}
+
+// removeFromStringList removes value from cfg[parentKey][listKey] if present.
+// Returns true if the value was removed, false if it was not found.
+func removeFromStringList(cfg map[string]interface{}, parentKey, listKey, value string) bool {
+	parent, ok := cfg[parentKey].(map[string]interface{})
+	if !ok || parent == nil {
+		return false
+	}
+	rawList, ok := parent[listKey].([]interface{})
+	if !ok {
+		return false
+	}
+	for i, item := range rawList {
+		if s, ok := item.(string); ok && s == value {
+			parent[listKey] = append(rawList[:i], rawList[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// setServerEntryField sets a field on a server entry within the config.
+// Used by Cursor (autoApprove) and Windsurf (alwaysAllow) to embed
+// approval lists inside the server entry.
+func setServerEntryField(path, serversKey, serverName, fieldName string, value interface{}) error {
+	top, err := readJSONConfig(path)
+	if err != nil {
+		return err
+	}
+	servers := getServersMap(top, serversKey)
+	entry, ok := servers[serverName].(map[string]interface{})
+	if !ok || entry == nil {
+		return nil // server entry doesn't exist yet — nothing to patch
+	}
+	entry[fieldName] = value
+	servers[serverName] = entry
+	top[serversKey] = servers
+	return writeJSONConfig(path, top)
+}
+
+// removeServerEntryField removes a field from a server entry.
+func removeServerEntryField(path, serversKey, serverName, fieldName string) error {
+	top, err := readJSONConfig(path)
+	if err != nil {
+		return err
+	}
+	servers := getServersMap(top, serversKey)
+	entry, ok := servers[serverName].(map[string]interface{})
+	if !ok || entry == nil {
+		return nil
+	}
+	delete(entry, fieldName)
+	servers[serverName] = entry
+	top[serversKey] = servers
+	return writeJSONConfig(path, top)
+}
+
 // writeEntry is the shared implementation for Write across all writers that use
 // a single JSON file with a map of server entries under serversKey.
 func writeEntry(path, serversKey, serverName string, cfg MCPEntry) error {

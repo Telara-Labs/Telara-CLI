@@ -172,6 +172,11 @@ func cleanupMCPConfigs(userID, tenantID string) {
 		} else {
 			removedCount++
 		}
+		if pw, ok := w.(agent.PermissionWriter); ok {
+			if err := pw.RemovePermissions(agent.ScopeGlobal, "telara"); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove %s auto-approve rule: %v\n", w.Name(), err)
+			}
+		}
 	}
 
 	// Remove project entries.
@@ -189,6 +194,11 @@ func cleanupMCPConfigs(userID, tenantID string) {
 					fmt.Fprintf(os.Stderr, "Warning: failed to remove project config for %s in %s: %v\n", toolName, proj.Path, err)
 				} else {
 					removedCount++
+				}
+				if pw, ok := w.(agent.PermissionWriter); ok {
+					if err := pw.RemovePermissions(agent.ScopeProject, "telara"); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to remove %s auto-approve rule in %s: %v\n", toolName, proj.Path, err)
+					}
 				}
 			}
 			_ = agent.UnregisterProject(proj.Path)
@@ -209,6 +219,11 @@ func cleanupMCPConfigs(userID, tenantID string) {
 				}
 			} else {
 				removedCount++
+			}
+			if pw, ok := w.(agent.PermissionWriter); ok {
+				if err := pw.RemovePermissions(agent.ScopeManaged, "telara"); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to remove %s managed auto-approve rule: %v\n", w.Name(), err)
+				}
 			}
 		}
 	}

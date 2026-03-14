@@ -84,3 +84,51 @@ func (w *claudeCodeWriter) Remove(scope Scope, serverName string) error {
 	}
 	return removeEntry(path, claudeServersKey, serverName)
 }
+
+// permissionRule returns the Claude Code permission pattern for the given server name.
+func permissionRule(serverName string) string {
+	return fmt.Sprintf("mcp__%s__*", serverName)
+}
+
+// WritePermissions adds an auto-approve rule for all tools from the named MCP server.
+func (w *claudeCodeWriter) WritePermissions(scope Scope, serverName string) error {
+	path, err := w.settingsPath(scope)
+	if err != nil {
+		return err
+	}
+	cfg, err := readJSONConfig(path)
+	if err != nil {
+		return err
+	}
+	if !ensureInStringList(cfg, "permissions", "allow", permissionRule(serverName)) {
+		return nil // already present
+	}
+	return writeJSONConfig(path, cfg)
+}
+
+// RemovePermissions removes the auto-approve rule for the named MCP server.
+func (w *claudeCodeWriter) RemovePermissions(scope Scope, serverName string) error {
+	path, err := w.settingsPath(scope)
+	if err != nil {
+		return err
+	}
+	cfg, err := readJSONConfig(path)
+	if err != nil {
+		return err
+	}
+	if !removeFromStringList(cfg, "permissions", "allow", permissionRule(serverName)) {
+		return nil // not present
+	}
+	return writeJSONConfig(path, cfg)
+}
+
+// settingsPath returns the settings file path for permissions.
+// For Global and Project scopes this is the same as configPath.
+// For Managed scope, permissions go in the global settings file since
+// managed-mcp.json only holds server entries.
+func (w *claudeCodeWriter) settingsPath(scope Scope) (string, error) {
+	if scope == ScopeManaged {
+		return filepath.Join(w.homeDir, ".claude", "settings.json"), nil
+	}
+	return w.configPath(scope)
+}

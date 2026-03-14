@@ -102,7 +102,8 @@ func runDeviceFlowLogin() error {
 	return finishLogin(token, whoami)
 }
 
-// finishLogin saves the token, prints the welcome banner, and auto-restores any snapshot.
+// finishLogin saves the token, prints the welcome banner, auto-restores any snapshot,
+// and auto-wires detected tools if no snapshot existed.
 func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	if err := auth.SaveToken(prefs.APIURL, token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
@@ -112,7 +113,14 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 	printLoginBanner(whoami.Email, whoami.OrgName)
-	restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
+
+	restored := restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
+	if !restored {
+		// First-time login or no snapshot: auto-wire detected tools with the
+		// tenant-scoped default config so Layer 1 is set up without any extra steps.
+		client := api.NewClient(prefs.APIURL, token)
+		autoWireTools(client)
+	}
 	return nil
 }
 
@@ -138,9 +146,9 @@ func printLoginBanner(email, orgName string) {
 		desc string
 	}
 	cmds := []quickCmd{
-		{"telara setup", "Configure your AI tools"},
-		{"telara config list", "List your configurations"},
-		{"telara context list", "View saved contexts"},
+		{"telara config list", "View your knowledge configurations"},
+		{"telara setup", "Change config or add another tool"},
+		{"telara init", "Connect a specific repo to a different config"},
 		{"telara doctor", "Diagnose connection issues"},
 	}
 
@@ -151,12 +159,94 @@ func printLoginBanner(email, orgName string) {
 	fmt.Fprintln(os.Stdout)
 }
 
+// autoWireTools detects installed AI tools and writes the tenant-scoped default
+// MCP config to each one. Called on first login when no snapshot exists.
+// Failures are non-fatal — the user can always run 'telara setup' manually.
+func autoWireTools(client *api.Client) {
+	detected := agent.DetectedWriters()
+	if len(detected) == 0 {
+		return
+	}
+
+	// Use the resolve endpoint to find the right config without requiring the user
+	// to pick one. We prefer: managed bucket first, then available bucket.
+	resolved, err := client.ResolveConfigs(context.Background())
+	if err != nil {
+		return
+	}
+
+	// Pick the first usable config (managed takes priority over available).
+	candidates := append(resolved.Managed, resolved.Available...)
+	if len(candidates) == 0 {
+		return
+	}
+	cfg := candidates[0]
+
+	// Find the tenant-scoped deployment for this config.
+	deps, err := client.ListDeployments(context.Background(), cfg.ID)
+	if err != nil || len(deps.Deployments) == 0 {
+		return
+	}
+	var dep *api.Deployment
+	for i := range deps.Deployments {
+		if deps.Deployments[i].ScopeType == "tenant" {
+			dep = &deps.Deployments[i]
+			break
+		}
+	}
+	// Fall back to first deployment if no tenant-scoped one exists.
+	if dep == nil {
+		dep = &deps.Deployments[0]
+	}
+
+	var wired []string
+	for _, w := range detected {
+		keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
+			Name:      toolKeyName(w.Name()),
+			ScopeType: dep.ScopeType,
+			ScopeID:   dep.ScopeID,
+		})
+		if err != nil {
+			continue
+		}
+		mcpURL := keyResp.MCPURL
+		if mcpURL == "" {
+			mcpURL = prefs.APIURL + "/v1/mcp/sse"
+		}
+		entry := agent.MCPEntry{
+			Type:    "sse",
+			URL:     mcpURL,
+			Headers: map[string]string{"Authorization": "Bearer " + keyResp.RawKey},
+		}
+		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
+			continue
+		}
+		if pw, ok := w.(agent.PermissionWriter); ok {
+			_ = pw.WritePermissions(agent.ScopeGlobal, "telara")
+		}
+		wired = append(wired, w.Name())
+	}
+
+	if len(wired) > 0 {
+		fmt.Fprintf(os.Stdout, "  Connected to %s: ", cfg.Name)
+		for i, name := range wired {
+			if i > 0 {
+				fmt.Fprint(os.Stdout, ", ")
+			}
+			fmt.Fprint(os.Stdout, name)
+		}
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout)
+	}
+}
+
 // restoreSnapshotAfterLogin silently restores the user's MCP config snapshot if one exists.
 // Managed entries are skipped when the tenant differs from the snapshot's tenant.
-func restoreSnapshotAfterLogin(userID, tenantID string) {
+// Returns true if any entries were restored.
+func restoreSnapshotAfterLogin(userID, tenantID string) bool {
 	snap, err := agent.LoadSnapshot(userID)
 	if err != nil || snap == nil {
-		return
+		return false
 	}
 
 	sametenant := snap.TenantID == "" || snap.TenantID == tenantID
@@ -224,7 +314,9 @@ func restoreSnapshotAfterLogin(userID, tenantID string) {
 			fmt.Fprintf(os.Stdout, "    %s (%s)  ->  %s\n", e.tool, e.scope, e.path)
 		}
 		fmt.Fprintln(os.Stdout)
+		return true
 	}
+	return false
 }
 
 // openBrowser tries to open url in the user's default browser.

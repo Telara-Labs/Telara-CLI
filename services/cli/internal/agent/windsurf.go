@@ -67,3 +67,27 @@ func (w *windsurfWriter) Remove(scope Scope, serverName string) error {
 	}
 	return removeEntry(path, windsurfServersKey, serverName)
 }
+
+// WritePermissions sets the alwaysAllow field on the server entry with all
+// platform tool names.
+func (w *windsurfWriter) WritePermissions(scope Scope, serverName string) error {
+	path, err := w.configPath(scope)
+	if err != nil {
+		return err
+	}
+	tools := PlatformToolNames()
+	toolList := make([]interface{}, len(tools))
+	for i, t := range tools {
+		toolList[i] = t
+	}
+	return setServerEntryField(path, windsurfServersKey, serverName, "alwaysAllow", toolList)
+}
+
+// RemovePermissions removes the alwaysAllow field from the server entry.
+func (w *windsurfWriter) RemovePermissions(scope Scope, serverName string) error {
+	path, err := w.configPath(scope)
+	if err != nil {
+		return err
+	}
+	return removeServerEntryField(path, windsurfServersKey, serverName, "alwaysAllow")
+}

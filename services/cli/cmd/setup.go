@@ -117,6 +117,12 @@ func runSetupForWriter(w agent.AgentWriter, scope agent.Scope) error {
 		return fmt.Errorf("failed to write %s config: %w", w.Name(), err)
 	}
 
+	if pw, ok := w.(agent.PermissionWriter); ok {
+		if err := pw.WritePermissions(scope, "telara"); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not auto-approve tools: %v\n", err)
+		}
+	}
+
 	fmt.Fprintf(os.Stdout, "Configured %s\n", w.Name())
 	fmt.Fprintf(os.Stdout, "Config:    %s\n", selectedConfig.Name)
 	fmt.Fprintf(os.Stdout, "MCP URL:   %s\n", mcpURL)

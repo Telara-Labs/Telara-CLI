@@ -19,6 +19,37 @@ type MCPEntry struct {
 	Headers map[string]string // e.g. {"Authorization": "Bearer ..."}
 }
 
+// PermissionWriter is an optional interface that AgentWriters can implement
+// to manage tool auto-approval permissions. Writers that support it (e.g. Claude Code)
+// can auto-approve MCP tools so users aren't double-prompted.
+type PermissionWriter interface {
+	WritePermissions(scope Scope, serverName string) error
+	RemovePermissions(scope Scope, serverName string) error
+}
+
+// PlatformToolNames returns the static tool names that are always available
+// from the Telara MCP server. Used by clients that need explicit tool lists
+// for auto-approval (Cursor, Windsurf).
+func PlatformToolNames() []string {
+	return []string{
+		"telara_knowledge_search",
+		"telara_knowledge_traverse",
+		"telara_knowledge_get_context",
+		"telara_knowledge_impact",
+		"telara_archive_read",
+		"telara_archive_ls",
+		"telara_archive_batch_read",
+		"telara_archive_search",
+		"telara_task_list",
+		"telara_task_create",
+		"telara_task_resume",
+		"telara_task_checkpoint",
+		"telara_task_complete",
+		"telara_task_pause",
+		"telara_run_action",
+	}
+}
+
 // AgentWriter reads and writes MCP server configuration for a specific agent tool.
 type AgentWriter interface {
 	// Name returns the canonical tool name (e.g. "claude-code", "cursor").
