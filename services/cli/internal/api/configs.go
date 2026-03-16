@@ -51,6 +51,8 @@ type ResolveResponse struct {
 	Managed   []MCPConfig `json:"managed"`
 	User      []MCPConfig `json:"user"`
 	Available []MCPConfig `json:"available"`
+	MasterKey string      `json:"master_key,omitempty"` // Pre-provisioned tenant master key (if available)
+	MCPURL    string      `json:"mcp_url,omitempty"`    // MCP endpoint URL for master key
 }
 
 // ListConfigs fetches all MCP configurations accessible to the authenticated user.

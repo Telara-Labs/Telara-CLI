@@ -9,11 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zalando/go-keyring"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
-
-const keyringService = "telara-cli"
 
 // ErrNoToken is returned when no stored token is found for the given API URL.
 var ErrNoToken = errors.New("no token stored")
@@ -39,20 +36,12 @@ func sanitizeHost(apiURL string) (string, error) {
 	return safe, nil
 }
 
-// SaveToken stores token for the given apiURL.
-// It tries the OS keychain first; on failure it falls back to a file in CredentialsDir.
+// SaveToken stores token for the given apiURL in the credentials file.
 func SaveToken(apiURL, token string) error {
 	host, err := sanitizeHost(apiURL)
 	if err != nil {
 		return err
 	}
-
-	// Try OS keychain first
-	if err := keyring.Set(keyringService, host, token); err == nil {
-		return nil
-	}
-
-	// Fall back to file-based storage
 	return saveTokenToFile(host, token)
 }
 
@@ -63,42 +52,16 @@ func LoadToken(apiURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	// Try OS keychain first
-	token, err := keyring.Get(keyringService, host)
-	if err == nil && token != "" {
-		return token, nil
-	}
-
-	// Fall back to file-based storage
 	return loadTokenFromFile(host)
 }
 
-// DeleteToken removes the stored token for the given apiURL from both the
-// OS keychain (if present) and the file fallback.
-// If both deletions fail with real errors (not "not found"), a combined error is returned.
+// DeleteToken removes the stored token for the given apiURL.
 func DeleteToken(apiURL string) error {
 	host, err := sanitizeHost(apiURL)
 	if err != nil {
 		return err
 	}
-
-	// Attempt keychain deletion; "not found" is acceptable.
-	keyringErr := keyring.Delete(keyringService, host)
-	// go-keyring returns an error whose text includes "not found" or similar for missing entries.
-	// Treat any error as non-fatal for keyring (it may not be stored there).
-	keyringFailed := keyringErr != nil && keyringErr.Error() != "secret not found in keyring"
-
-	// Attempt file deletion (ignore ErrNotExist).
-	fileErr := deleteTokenFile(host)
-
-	if keyringFailed && fileErr != nil {
-		return fmt.Errorf("keyring: %w; file: %v", keyringErr, fileErr)
-	}
-	if fileErr != nil {
-		return fileErr
-	}
-	return nil
+	return deleteTokenFile(host)
 }
 
 // --- file-based fallback ---

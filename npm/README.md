@@ -62,8 +62,6 @@ telara doctor
 | `telara config list` | List MCP configurations accessible to you |
 | `telara config show <name>` | Show data sources, policies, key count, and MCP URL |
 | `telara config keys <name>` | List active API keys with scope and expiry |
-| `telara config generate-key <name>` | Generate a new API key (`--expires 30d\|90d\|1yr\|never`) |
-| `telara config revoke-key <key-id> --config <id>` | Revoke an API key immediately |
 | `telara config rotate-key <context-name>` | Generate a replacement key and auto-revoke the old one |
 
 ### Agent tool setup

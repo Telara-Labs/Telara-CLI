@@ -119,7 +119,7 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 		// First-time login or no snapshot: auto-wire detected tools with the
 		// tenant-scoped default config so Layer 1 is set up without any extra steps.
 		client := api.NewClient(prefs.APIURL, token)
-		autoWireTools(client)
+		autoWireTools(client, loginForce)
 	}
 	return nil
 }
@@ -161,63 +161,98 @@ func printLoginBanner(email, orgName string) {
 
 // autoWireTools detects installed AI tools and writes the tenant-scoped default
 // MCP config to each one. Called on first login when no snapshot exists.
+//
+// If the backend provides a master key (auto-provisioned at tenant creation),
+// we use it directly — no GenerateKey or ListDeployments calls needed. The
+// master key gives access to all tenant-scoped data sources and policies.
+//
+// If the tools are already wired (key exists in global settings) and force is
+// false, the call is a no-op — we never mint a new key just because the user
+// ran 'telara login' again.
+//
 // Failures are non-fatal — the user can always run 'telara setup' manually.
-func autoWireTools(client *api.Client) {
+func autoWireTools(client *api.Client, force bool) {
 	detected := agent.DetectedWriters()
 	if len(detected) == 0 {
 		return
 	}
 
-	// Use the resolve endpoint to find the right config without requiring the user
-	// to pick one. We prefer: managed bucket first, then available bucket.
+	// If not forced, skip re-generation when all detected tools are already wired.
+	// This prevents minting a new orphaned key on every 'telara login'.
+	if !force {
+		allWired := true
+		for _, w := range detected {
+			entries, err := w.Read(agent.ScopeGlobal)
+			if err != nil || entries["telara"].URL == "" {
+				allWired = false
+				break
+			}
+		}
+		if allWired {
+			return
+		}
+	}
+
 	resolved, err := client.ResolveConfigs(context.Background())
 	if err != nil {
 		return
 	}
 
-	// Pick the first usable config (managed takes priority over available).
-	candidates := append(resolved.Managed, resolved.Available...)
-	if len(candidates) == 0 {
-		return
-	}
-	cfg := candidates[0]
+	var rawKey, mcpURL, configName string
 
-	// Find the tenant-scoped deployment for this config.
-	deps, err := client.ListDeployments(context.Background(), cfg.ID)
-	if err != nil || len(deps.Deployments) == 0 {
-		return
-	}
-	var dep *api.Deployment
-	for i := range deps.Deployments {
-		if deps.Deployments[i].ScopeType == "tenant" {
-			dep = &deps.Deployments[i]
-			break
+	if resolved.MasterKey != "" {
+		// Master key path: use the pre-provisioned tenant key directly.
+		rawKey = resolved.MasterKey
+		mcpURL = resolved.MCPURL
+		configName = "Master"
+	} else {
+		// Fallback: pick a config and generate a key (existing flow).
+		candidates := append(resolved.Managed, resolved.Available...)
+		if len(candidates) == 0 {
+			return
 		}
-	}
-	// Fall back to first deployment if no tenant-scoped one exists.
-	if dep == nil {
-		dep = &deps.Deployments[0]
-	}
+		cfg := candidates[0]
+		configName = cfg.Name
 
-	var wired []string
-	for _, w := range detected {
+		deps, err := client.ListDeployments(context.Background(), cfg.ID)
+		if err != nil || len(deps.Deployments) == 0 {
+			return
+		}
+		var dep *api.Deployment
+		for i := range deps.Deployments {
+			if deps.Deployments[i].ScopeType == "tenant" {
+				dep = &deps.Deployments[i]
+				break
+			}
+		}
+		if dep == nil {
+			dep = &deps.Deployments[0]
+		}
+
 		keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
-			Name:      toolKeyName(w.Name()),
+			Name:      toolKeyName(detected[0].Name()),
 			ScopeType: dep.ScopeType,
 			ScopeID:   dep.ScopeID,
 		})
 		if err != nil {
-			continue
+			return
 		}
-		mcpURL := keyResp.MCPURL
-		if mcpURL == "" {
-			mcpURL = prefs.APIURL + "/v1/mcp/sse"
-		}
-		entry := agent.MCPEntry{
-			Type:    "sse",
-			URL:     mcpURL,
-			Headers: map[string]string{"Authorization": "Bearer " + keyResp.RawKey},
-		}
+		rawKey = keyResp.RawKey
+		mcpURL = keyResp.MCPURL
+	}
+
+	if mcpURL == "" {
+		mcpURL = prefs.APIURL + "/v1/mcp/sse"
+	}
+
+	entry := agent.MCPEntry{
+		Type:    "sse",
+		URL:     mcpURL,
+		Headers: map[string]string{"Authorization": "Bearer " + rawKey},
+	}
+
+	var wired []string
+	for _, w := range detected {
 		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
 			continue
 		}
@@ -228,7 +263,7 @@ func autoWireTools(client *api.Client) {
 	}
 
 	if len(wired) > 0 {
-		fmt.Fprintf(os.Stdout, "  Connected to %s: ", cfg.Name)
+		fmt.Fprintf(os.Stdout, "  Connected to %s: ", configName)
 		for i, name := range wired {
 			if i > 0 {
 				fmt.Fprint(os.Stdout, ", ")
