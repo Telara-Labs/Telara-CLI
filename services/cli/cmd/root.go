@@ -35,10 +35,16 @@ Windsurf, VS Code) two things: searchable knowledge from your engineering stack
 (repos, Jira, Confluence, Slack, etc.) and live tooling against your integrations
 — all governed by configurable access controls and policies.
 
+Configuration is applied in three layers:
+  Layer 1 · Managed     Set by your admin, applied automatically on login.
+  Layer 2 · Global      Your personal choice, set with 'telara config global'.
+  Layer 3 · Project     Per-directory override, set with 'telara config project'.
+
 Get started:
-  telara login                Sign in to your Telara workspace
-  telara setup claude-code    Connect Claude Code to your stack
-  telara doctor               Verify the connection is working`,
+  telara login                     Sign in (auto-connects your tools)
+  telara config global <name>      Change your global configuration
+  telara config                    See what's configured at each layer
+  telara doctor                    Verify the connection is working`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
@@ -130,7 +136,15 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootAPIURL, "api-url", "", "Telara API base URL (overrides config)")
 	rootCmd.PersistentFlags().StringVar(&rootContext, "context", "", "Active context name (overrides config)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Print full HTTP response on errors")
-	rootCmd.PersistentFlags().StringVar(&caCertPath, "ca-cert", "", "Path to CA certificate for TLS verification (local dev with self-signed cert)")
+	rootCmd.PersistentFlags().StringVar(&caCertPath, "ca-cert", "", "Path to CA certificate for TLS verification")
+
+	// Hide internal/staging flags from user-facing help.
+	rootCmd.PersistentFlags().MarkHidden("api-url")
+	rootCmd.PersistentFlags().MarkHidden("context")
+	rootCmd.PersistentFlags().MarkHidden("ca-cert")
+
+	// Hide the auto-generated completion command.
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 }
 
 func initConfig() {

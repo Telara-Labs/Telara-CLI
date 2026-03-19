@@ -146,9 +146,9 @@ func printLoginBanner(email, orgName string) {
 		desc string
 	}
 	cmds := []quickCmd{
-		{"telara config list", "View your knowledge configurations"},
-		{"telara setup", "Change config or add another tool"},
-		{"telara init", "Connect a specific repo to a different config"},
+		{"telara config", "See what's configured at each layer"},
+		{"telara config global <name>", "Change your global configuration"},
+		{"telara config project <name>", "Set a project-specific config"},
 		{"telara doctor", "Diagnose connection issues"},
 	}
 
@@ -170,7 +170,7 @@ func printLoginBanner(email, orgName string) {
 // false, the call is a no-op — we never mint a new key just because the user
 // ran 'telara login' again.
 //
-// Failures are non-fatal — the user can always run 'telara setup' manually.
+// Failures are non-fatal — the user can always run 'telara config global' manually.
 func autoWireTools(client *api.Client, force bool) {
 	detected := agent.DetectedWriters()
 	if len(detected) == 0 {

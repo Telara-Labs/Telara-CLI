@@ -2,7 +2,7 @@
 
 # @telara-cli/cli
 
-The official CLI for [Telara](https://telara.dev) — connect your AI coding tools to your organization's MCP configurations. Manage access, generate keys, and configure Claude Code, Cursor, Windsurf, and VS Code from your terminal.
+The official CLI for [Telara](https://telara.dev) — connect your AI coding tools to your organization's MCP configurations. Claude Code, Cursor, Windsurf, and VS Code are configured automatically on login.
 
 [![npm](https://img.shields.io/npm/v/@telara-cli/cli?color=7c3aed)](https://www.npmjs.com/package/@telara-cli/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-7c3aed.svg)](https://github.com/Telara-Labs/Telara-CLI/blob/main/LICENSE)
@@ -33,15 +33,22 @@ irm https://get.telara.dev/windows | iex
 ## Quick start
 
 ```bash
-# Log in (browser-based device flow)
+# Log in — auto-connects your installed tools
 telara login
-
-# Set up your agent tools
-telara setup
 
 # Verify everything is working
 telara doctor
 ```
+
+---
+
+## Three-layer configuration
+
+| Layer | Name | How it's set |
+|-------|------|-------------|
+| **1** | Managed | Automatic on login |
+| **2** | Global | `telara config global <name>` |
+| **3** | Project | `telara config project <name>` |
 
 ---
 
@@ -51,74 +58,44 @@ telara doctor
 
 | Command | Description |
 |---------|-------------|
-| `telara login` | Authenticate via browser (device flow) or `--token <tlrc_...>` |
+| `telara login` | Sign in via browser or `--token <tlrc_...>` — auto-connects tools |
 | `telara logout` | Revoke token and remove local credentials |
-| `telara whoami` | Show current user, org, and active context |
+| `telara whoami` | Show current user and organization |
 
-### MCP configuration management
-
-| Command | Description |
-|---------|-------------|
-| `telara config list` | List MCP configurations accessible to you |
-| `telara config show <name>` | Show data sources, policies, key count, and MCP URL |
-| `telara config keys <name>` | List active API keys with scope and expiry |
-| `telara config rotate-key <context-name>` | Generate a replacement key and auto-revoke the old one |
-
-### Agent tool setup
+### Configuration
 
 | Command | Description |
 |---------|-------------|
-| `telara setup` | Interactive setup — auto-detects all installed tools |
-| `telara setup claude-code` | Configure Claude Code (`--managed` for enterprise MDM) |
-| `telara setup cursor` | Configure Cursor |
-| `telara setup windsurf` | Configure Windsurf |
-| `telara setup vscode` | Configure VS Code |
-| `telara setup all` | Configure all detected tools at once |
-| `telara init` | Write a project-scoped MCP config for the current directory |
+| `telara config` | Show what's configured at each layer |
+| `telara config list` | List available configurations |
+| `telara config show <name>` | Inspect a configuration |
+| `telara config global <name>` | Set global configuration (Layer 2) |
+| `telara config project <name>` | Set project-specific configuration (Layer 3) |
+| `telara config keys <name>` | List API keys (read-only) |
 
-### Contexts
-
-| Command | Description |
-|---------|-------------|
-| `telara context list` | List saved contexts |
-| `telara context create <name>` | Create a context with a generated scoped API key |
-| `telara context use <name>` | Switch the active context |
-| `telara context current` | Show active context details and MCP URL |
-| `telara context delete <name>` | Remove a saved context |
-
-### Provisioning
+### Provisioning (admin)
 
 | Command | Description |
 |---------|-------------|
-| `telara provision claude-web` | Key for Claude.ai (Anthropic Organization Connector) |
-| `telara provision ci` | Key for CI/CD environments |
+| `telara provision claude-web` | Credentials for Claude.ai Organization Connector |
+| `telara provision ci` | Service account key for CI/CD pipelines |
 | `telara provision managed` | Config for enterprise MDM / GPO deployment |
 
 ### Diagnostics
 
 | Command | Description |
 |---------|-------------|
-| `telara doctor` | Check connectivity, auth, tool configs, and key health |
-| `telara version` | Print version, commit, and build date |
+| `telara doctor` | Check connectivity, auth, and tool configuration |
+| `telara version` | Print version |
 | `telara update` | Self-update to the latest release |
-
----
-
-## Global flags
-
-| Flag | Description |
-|------|-------------|
-| `--api-url <url>` | Override the Telara API base URL |
-| `--context <name>` | Use a specific context for this command |
-| `-v, --verbose` | Print full HTTP responses on errors |
 
 ---
 
 ## Supported agent tools
 
-- **Claude Code** — global and managed (enterprise MDM) scope
-- **Cursor** — global scope
-- **Windsurf** — global scope
+- **Claude Code** — global and project scope
+- **Cursor** — global and project scope
+- **Windsurf** — global and project scope
 - **VS Code** — project scope
 
 ---
