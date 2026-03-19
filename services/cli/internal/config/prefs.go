@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const defaultAPIURL = "https://www.telara.dev"
+const defaultAPIURL = "https://api.telara.dev"
 
 // Prefs holds user-level CLI preferences persisted to config.json.
 type Prefs struct {
@@ -49,6 +49,13 @@ func Load() (*Prefs, error) {
 	// Ensure APIURL always has a value
 	if p.APIURL == "" {
 		p.APIURL = defaultAPIURL
+	}
+
+	// Auto-migrate stale www.telara.dev URLs left over from before the static export migration.
+	// www.telera.dev is now a CDN-hosted static site and cannot proxy /v1/* requests.
+	if p.APIURL == "https://www.telara.dev" {
+		p.APIURL = defaultAPIURL
+		_ = Save(p) // best-effort; ignore error so login still works
 	}
 
 	return p, nil

@@ -39,7 +39,11 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-find . -type f -name "go.mod" -print0 | while IFS= read -r -d $'\0' file; do
+mod_pids=()
+mod_logs=()
+
+while IFS= read -r -d $'\0' file; do
+  mod_log=$(mktemp)
   (
     cd "$(dirname "$file")" || exit 1
     # if telara module is in the file, then run the update-proto.sh script
@@ -65,5 +69,13 @@ find . -type f -name "go.mod" -print0 | while IFS= read -r -d $'\0' file; do
     else
       echo "Skipping module in: $(pwd)"
     fi
-  )
+  ) >"$mod_log" 2>&1 &
+  mod_pids+=($!)
+  mod_logs+=("$mod_log")
+done < <(find . -type f -name "go.mod" -print0)
+
+for i in "${!mod_pids[@]}"; do
+  wait "${mod_pids[$i]}"
+  cat "${mod_logs[$i]}"
+  rm -f "${mod_logs[$i]}"
 done
