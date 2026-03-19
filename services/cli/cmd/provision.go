@@ -59,7 +59,7 @@ func provisionSelectConfig(client *api.Client) (*api.MCPConfig, error) {
 		}
 		return &detail.MCPConfig, nil
 	}
-	return selectConfig(client)
+	return selectConfigInteractive(client)
 }
 
 func runProvisionClaudeWeb(cmd *cobra.Command, args []string) error {
