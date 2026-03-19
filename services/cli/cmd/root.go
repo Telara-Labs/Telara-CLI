@@ -31,7 +31,7 @@ var rootCmd = &cobra.Command{
 	Use:   "telara",
 	Short: "Telara CLI — scoped knowledge and tooling for your AI coding assistant",
 	Long: `Telara is a secure MCP server that gives agentic coding tools (Claude Code, Cursor,
-Windsurf, VS Code) two things: searchable knowledge from your engineering stack
+Windsurf, VS Code, Codex, Gemini CLI, Amazon Q) two things: searchable knowledge from your engineering stack
 (repos, Jira, Confluence, Slack, etc.) and live tooling against your integrations
 — all governed by configurable access controls and policies.
 

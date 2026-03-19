@@ -11,6 +11,9 @@ func TestWriterByName(t *testing.T) {
 		{"cursor", "cursor"},
 		{"windsurf", "windsurf"},
 		{"vscode", "vscode"},
+		{"codex", "codex"},
+		{"gemini", "gemini"},
+		{"amazon-q", "amazon-q"},
 	}
 	for _, tt := range tests {
 		w := WriterByName(tt.name)

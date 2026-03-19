@@ -26,17 +26,21 @@ func (w *claudeCodeWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".claude")) || binaryInPath("claude")
 }
 
-// configPath returns the settings file path for the given scope.
+// configPath returns the MCP config file path for the given scope.
+//
+// Global → ~/.claude.json  (Claude Code's user-scope mcpServers)
+// Project → ./.mcp.json    (Claude Code project-scope, at repo root)
+// Managed → system-wide managed-mcp.json (enterprise lockdown)
 func (w *claudeCodeWriter) configPath(scope Scope) (string, error) {
 	switch scope {
 	case ScopeGlobal:
-		return filepath.Join(w.homeDir, ".claude", "settings.json"), nil
+		return filepath.Join(w.homeDir, ".claude.json"), nil
 	case ScopeProject:
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", fmt.Errorf("cannot determine working directory: %w", err)
 		}
-		return filepath.Join(cwd, ".claude", "settings.json"), nil
+		return filepath.Join(cwd, ".mcp.json"), nil
 	case ScopeManaged:
 		switch runtime.GOOS {
 		case "darwin":
@@ -123,12 +127,19 @@ func (w *claudeCodeWriter) RemovePermissions(scope Scope, serverName string) err
 }
 
 // settingsPath returns the settings file path for permissions.
-// For Global and Project scopes this is the same as configPath.
-// For Managed scope, permissions go in the global settings file since
-// managed-mcp.json only holds server entries.
+// Permissions always go in .claude/settings.json (not .claude.json or .mcp.json),
+// since that is where Claude Code reads permission rules from.
 func (w *claudeCodeWriter) settingsPath(scope Scope) (string, error) {
-	if scope == ScopeManaged {
+	switch scope {
+	case ScopeGlobal, ScopeManaged:
 		return filepath.Join(w.homeDir, ".claude", "settings.json"), nil
+	case ScopeProject:
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("cannot determine working directory: %w", err)
+		}
+		return filepath.Join(cwd, ".claude", "settings.json"), nil
+	default:
+		return "", fmt.Errorf("unknown scope %d", scope)
 	}
-	return w.configPath(scope)
 }

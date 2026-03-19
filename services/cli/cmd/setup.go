@@ -96,7 +96,7 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 
 	writers := agent.DetectedWriters()
 	if len(writers) == 0 {
-		return fmt.Errorf("no supported agent tools detected — install Claude Code, Cursor, Windsurf, or VS Code first")
+		return fmt.Errorf("no supported agent tools detected — install Claude Code, Cursor, Windsurf, VS Code, Codex, Gemini CLI, or Amazon Q first")
 	}
 
 	keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{

@@ -7,6 +7,9 @@ func AllWriters() []AgentWriter {
 		NewCursorWriter(),
 		NewWindsurfWriter(),
 		NewVSCodeWriter(),
+		NewCodexWriter(),
+		NewGeminiWriter(),
+		NewAmazonQWriter(),
 	}
 }
 

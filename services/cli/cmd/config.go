@@ -223,7 +223,7 @@ var configKeysCmd = &cobra.Command{
 var configGlobalCmd = &cobra.Command{
 	Use:   "global [name-or-id]",
 	Short: "Set the MCP configuration used by all your AI tools (Layer 2)",
-	Long: `Detects your installed AI tools (Claude Code, Cursor, Windsurf, VS Code)
+	Long: `Detects your installed AI tools (Claude Code, Cursor, Windsurf, VS Code, Codex, Gemini CLI, Amazon Q)
 and writes the selected MCP configuration to each tool's global settings.
 This becomes your default across all projects.
 
@@ -252,7 +252,8 @@ of the global one. Useful when different repos need different integrations.
 If no name is given, you'll be prompted to select from available configurations.
 
 Remember to add the generated config files to .gitignore:
-  .mcp.json  .cursor/mcp.json  .vscode/mcp.json  .windsurf/mcp_config.json`,
+  .mcp.json  .cursor/mcp.json  .vscode/mcp.json  .windsurf/mcp_config.json
+  .codex/config.toml  .gemini/settings.json  .amazonq/mcp.json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nameOrID := ""
