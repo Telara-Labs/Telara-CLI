@@ -22,6 +22,7 @@ type MCPConfig struct {
 	Name        string `json:"name"`
 	ScopeType   string `json:"scope_type"`
 	ScopeID     string `json:"scope_id"`
+	ScopeName   string `json:"scope_name"`
 	DataSources int    `json:"data_source_count"`
 	Status      string `json:"status"`
 	MCPURL      string `json:"mcp_url"`
@@ -35,15 +36,19 @@ type ListConfigsResponse struct {
 // ConfigDetail extends MCPConfig with per-configuration detail fields.
 type ConfigDetail struct {
 	MCPConfig
-	DataSources []DataSource `json:"data_sources"`
-	PolicyCount int          `json:"policy_attachment_count"`
-	KeyCount    int          `json:"key_count"`
+	Description     string       `json:"description"`
+	DeploymentCount int          `json:"deployment_count"`
+	DataSources     []DataSource `json:"data_sources"`
+	Deployments     []Deployment `json:"deployments"`
+	PolicyCount     int          `json:"policy_attachment_count"`
+	KeyCount        int          `json:"key_count"`
 }
 
 // DataSource describes a single data source attached to an MCP configuration.
 type DataSource struct {
-	Name        string `json:"name"`
-	Integration string `json:"integration"`
+	Name          string `json:"name"`
+	Integration   string `json:"integration"`
+	SelectionMode string `json:"selection_mode"`
 }
 
 // ResolveResponse is the payload returned by GET /v1/cli/configs/resolve.

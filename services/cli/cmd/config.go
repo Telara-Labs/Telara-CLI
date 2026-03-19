@@ -41,9 +41,9 @@ var configListCmd = &cobra.Command{
 		}
 		t := &display.Table{Headers: []string{"NAME", "SCOPE", "DATA SOURCES", "STATUS"}}
 		for _, c := range resp.Configs {
-			scope := c.ScopeType
-			if c.ScopeID != "" {
-				scope = c.ScopeType + "/" + c.ScopeID
+			scope := c.ScopeName
+			if scope == "" {
+				scope = c.ScopeType
 			}
 			t.AddRow(c.Name, scope, fmt.Sprintf("%d", c.DataSources), c.Status)
 		}
@@ -54,7 +54,7 @@ var configListCmd = &cobra.Command{
 
 var configShowCmd = &cobra.Command{
 	Use:   "show <name-or-id>",
-	Short: "Show data sources, policies, and keys for a knowledge access profile",
+	Short: "Show data sources, deployments, policies, and keys for a knowledge access profile",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := auth.LoadToken(prefs.APIURL)
@@ -66,22 +66,84 @@ var configShowCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get config: %w", err)
 		}
-		display.PrintKV(os.Stdout, "Name:", cfg.Name)
-		display.PrintKV(os.Stdout, "ID:", cfg.ID)
-		display.PrintKV(os.Stdout, "Scope:", cfg.ScopeType)
-		display.PrintKV(os.Stdout, "Status:", cfg.Status)
-		display.PrintKVHighlight(os.Stdout, "MCP URL:", cfg.MCPURL)
-		display.PrintKV(os.Stdout, "Policies:", fmt.Sprintf("%d", cfg.PolicyCount))
-		display.PrintKV(os.Stdout, "API Keys:", fmt.Sprintf("%d", cfg.KeyCount))
-		if len(cfg.DataSources) > 0 {
-			names := make([]string, len(cfg.DataSources))
-			for i, ds := range cfg.DataSources {
-				names[i] = ds.Name + " (" + ds.Integration + ")"
-			}
-			display.PrintKV(os.Stdout, "Data Sources:", strings.Join(names, ", "))
-		} else {
-			display.PrintKV(os.Stdout, "Data Sources:", "none")
+
+		w := os.Stdout
+
+		// ── Header ────────────────────────────────────────────────
+		display.PrintKV(w, "Name:", cfg.Name)
+		display.PrintKV(w, "ID:", cfg.ID)
+		if cfg.Description != "" {
+			display.PrintKV(w, "Description:", cfg.Description)
 		}
+		scope := cfg.ScopeName
+		if scope == "" {
+			scope = cfg.ScopeType
+		}
+		display.PrintKV(w, "Scope:", scope)
+		display.PrintKV(w, "Status:", cfg.Status)
+		if cfg.MCPURL != "" {
+			display.PrintKVHighlight(w, "MCP URL:", cfg.MCPURL)
+		}
+		fmt.Fprintln(w)
+
+		// ── Data Sources ──────────────────────────────────────────
+		display.PrintSection("Data Sources")
+		if len(cfg.DataSources) == 0 {
+			display.PrintInfo("No data sources configured.")
+		} else {
+			t := &display.Table{Headers: []string{"INTEGRATION", "CREDENTIAL", "MODE"}}
+			for _, ds := range cfg.DataSources {
+				name := ds.Name
+				if name == "" {
+					name = "—"
+				}
+				mode := ds.SelectionMode
+				if mode == "" {
+					mode = "all"
+				}
+				t.AddRow(ds.Integration, name, mode)
+			}
+			t.Print(w)
+		}
+		fmt.Fprintln(w)
+
+		// ── Deployments ───────────────────────────────────────────
+		display.PrintSection("Deployments")
+		deployments := cfg.Deployments
+		if len(deployments) == 0 && cfg.DeploymentCount > 0 {
+			// Deployments not inlined by backend — fall back to separate call.
+			depResp, err := client.ListDeployments(context.Background(), cfg.ID)
+			if err == nil {
+				deployments = depResp.Deployments
+			}
+		}
+		if len(deployments) == 0 {
+			display.PrintInfo("Not deployed to any scope.")
+		} else {
+			t := &display.Table{Headers: []string{"SCOPE", "TARGET", "DEFAULT"}}
+			for _, d := range deployments {
+				target := d.ScopeID
+				if target == "" {
+					target = "(tenant-wide)"
+				}
+				if d.ScopeName != "" {
+					target = d.ScopeName
+				}
+				def := ""
+				if d.IsDefault {
+					def = "✓"
+				}
+				t.AddRow(d.ScopeType, target, def)
+			}
+			t.Print(w)
+		}
+		fmt.Fprintln(w)
+
+		// ── Keys & Policies ───────────────────────────────────────
+		display.PrintSection("Access")
+		display.PrintKV(w, "API Keys:", fmt.Sprintf("%d  (telara config keys %s)", cfg.KeyCount, cfg.ID))
+		display.PrintKV(w, "Policies:", fmt.Sprintf("%d", cfg.PolicyCount))
+
 		return nil
 	},
 }
