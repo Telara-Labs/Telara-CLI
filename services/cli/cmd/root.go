@@ -30,7 +30,7 @@ func IsVerbose() bool { return verbose }
 var rootCmd = &cobra.Command{
 	Use:   "telara",
 	Short: "Telara CLI — scoped knowledge and tooling for your AI coding assistant",
-	Long: `Telara is a secure MCP server that gives agentic coding tools (Claude Code, Cursor,
+	Long: `Telara is a secure MCP server gateway that gives agentic coding tools (Claude Code, Cursor,
 Windsurf, VS Code, Codex, Gemini CLI, Amazon Q) two things: searchable knowledge from your engineering stack
 (repos, Jira, Confluence, Slack, etc.) and live tooling against your integrations
 — all governed by configurable access controls and policies.
@@ -43,6 +43,7 @@ Configuration is applied in three layers:
 Get started:
   telara login                     Sign in (auto-connects your tools)
   telara config global <name>      Change your global configuration
+  telara config project <name>     Set a project override for this directory
   telara config                    See what's configured at each layer
   telara doctor                    Verify the connection is working`,
 	SilenceUsage:  true,
