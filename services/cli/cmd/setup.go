@@ -135,10 +135,14 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 		return fmt.Errorf("failed to configure any tools")
 	}
 
-	// Register project for project-scope wiring.
-	if scope == agent.ScopeProject {
+	// Persist which config was wired so `telara config` can show names.
+	switch scope {
+	case agent.ScopeGlobal:
+		_ = agent.SaveWiredGlobal(cfg.ID, cfg.Name)
+	case agent.ScopeProject:
 		cwd, err := os.Getwd()
 		if err == nil {
+			_ = agent.SaveWiredProject(cwd, cfg.ID, cfg.Name)
 			for _, name := range wired {
 				_ = agent.RegisterProject(cwd, name)
 			}

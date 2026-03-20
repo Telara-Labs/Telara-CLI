@@ -299,6 +299,9 @@ func runConfigProject(nameOrID string) error {
 func runConfigStatus() error {
 	w := os.Stdout
 
+	// Load locally-stored wired config names (written by `telara config global/project`).
+	wiredState, _ := agent.LoadWiredState()
+
 	fmt.Fprintln(w)
 	display.PrintSection("Configuration Layers")
 
@@ -306,10 +309,10 @@ func runConfigStatus() error {
 	detected := agent.DetectedWriters()
 
 	type layerInfo struct {
-		name  string
-		scope agent.Scope
-		found bool
-		url   string
+		name       string
+		scope      agent.Scope
+		found      bool
+		configName string
 	}
 	layers := []layerInfo{
 		{name: "Managed", scope: agent.ScopeManaged},
@@ -325,37 +328,41 @@ func runConfigStatus() error {
 			}
 			if entry, ok := entries["telara"]; ok && entry.URL != "" {
 				layers[i].found = true
-				layers[i].url = entry.URL
 				break
 			}
 		}
 	}
 
-	// Resolve config names from the API if authenticated.
-	var configNameByURL map[string]string
-	token, err := auth.LoadToken(prefs.APIURL)
-	var client *api.Client
-	var resolved *api.ResolveResponse
-	if err == nil {
-		client = api.NewClient(prefs.APIURL, token)
-		resolved, _ = client.ResolveConfigs(context.Background())
-		if resolved != nil {
-			configNameByURL = buildConfigNameIndex(client, resolved)
+	// Attach config names from wired state.
+	if wiredState.Global != nil {
+		for i := range layers {
+			if layers[i].scope == agent.ScopeGlobal && layers[i].found {
+				layers[i].configName = wiredState.Global.ConfigName
+			}
+		}
+	}
+	// For project scope, resolve from current directory.
+	if wiredState.Projects != nil {
+		cwd, _ := os.Getwd()
+		if cwd != "" {
+			if wc, ok := wiredState.Projects[cwd]; ok {
+				for i := range layers {
+					if layers[i].scope == agent.ScopeProject && layers[i].found {
+						layers[i].configName = wc.ConfigName
+					}
+				}
+			}
 		}
 	}
 
 	for _, l := range layers {
 		if l.found {
-			configName := ""
-			if configNameByURL != nil {
-				configName = configNameByURL[l.url]
-			}
-			if configName != "" {
+			if l.configName != "" {
 				fmt.Fprintf(w, "  %-12s %s  %s\n", l.name+":",
 					display.ColorSuccess.Sprint("✓"),
-					display.ColorBold.Sprint(configName))
+					display.ColorBold.Sprint(l.configName))
 			} else {
-				fmt.Fprintf(w, "  %-12s %s\n", l.name+":", display.ColorBold.Sprint("✓  connected"))
+				fmt.Fprintf(w, "  %-12s %s\n", l.name+":", display.ColorSuccess.Sprint("✓  connected"))
 			}
 		} else {
 			fmt.Fprintf(w, "  %-12s %s\n", l.name+":", display.ColorDim.Sprint("—  not configured"))
@@ -388,7 +395,12 @@ func runConfigStatus() error {
 		display.PrintSection("Project Configurations")
 		t := &display.Table{Headers: []string{"PATH", "MCP CONFIG", "TOOLS", "UPDATED"}}
 		for _, p := range projects {
-			configName := resolveProjectConfigName(detected, p.Path, configNameByURL)
+			configName := "—"
+			if wiredState.Projects != nil {
+				if wc, ok := wiredState.Projects[p.Path]; ok {
+					configName = wc.ConfigName
+				}
+			}
 			tools := strings.Join(p.Tools, ", ")
 			updated := p.UpdatedAt
 			if len(updated) > 10 {
@@ -400,19 +412,24 @@ func runConfigStatus() error {
 		fmt.Fprintln(w)
 	}
 
-	// Show available configs if logged in.
-	if resolved != nil {
-		if len(resolved.Managed) > 0 || len(resolved.User) > 0 || len(resolved.Available) > 0 {
-			display.PrintSection("Available Configurations")
-			all := append(append(resolved.Managed, resolved.User...), resolved.Available...)
-			for _, c := range all {
-				scope := c.ScopeName
-				if scope == "" {
-					scope = c.ScopeType
+	// Show available configs if logged in (deduplicated by ID).
+	token, err := auth.LoadToken(prefs.APIURL)
+	if err == nil {
+		client := api.NewClient(prefs.APIURL, token)
+		resolved, err := client.ResolveConfigs(context.Background())
+		if err == nil {
+			all := deduplicateConfigs(resolved)
+			if len(all) > 0 {
+				display.PrintSection("Available Configurations")
+				for _, c := range all {
+					scope := c.ScopeName
+					if scope == "" {
+						scope = c.ScopeType
+					}
+					fmt.Fprintf(w, "  %-30s %s\n", c.Name, display.ColorDim.Sprint(scope))
 				}
-				fmt.Fprintf(w, "  %-30s %s\n", c.Name, display.ColorDim.Sprint(scope))
+				fmt.Fprintln(w)
 			}
-			fmt.Fprintln(w)
 		}
 	}
 
@@ -423,56 +440,32 @@ func runConfigStatus() error {
 	return nil
 }
 
-// buildConfigNameIndex builds a URL→config-name map from all known configurations.
-func buildConfigNameIndex(client *api.Client, resolved *api.ResolveResponse) map[string]string {
-	index := make(map[string]string)
-	all := append(append(resolved.Managed, resolved.User...), resolved.Available...)
-	for _, c := range all {
-		if c.MCPURL != "" {
-			index[c.MCPURL] = c.Name
-		}
-		// Also try fetching detail to get the MCP URL if not in list response.
-		if c.MCPURL == "" && client != nil {
-			detail, err := client.GetConfig(context.Background(), c.ID)
-			if err == nil && detail.MCPURL != "" {
-				index[detail.MCPURL] = c.Name
-			}
-		}
-	}
-	return index
-}
+// deduplicateConfigs merges all resolve buckets and deduplicates by config ID.
+// Prefers the entry with the most specific scope info (user > available > managed).
+func deduplicateConfigs(resolved *api.ResolveResponse) []api.MCPConfig {
+	seen := make(map[string]bool)
+	var result []api.MCPConfig
 
-// resolveProjectConfigName reads the MCP entry from a project directory and
-// maps its URL to a known config name.
-func resolveProjectConfigName(writers []agent.AgentWriter, projectPath string, nameByURL map[string]string) string {
-	// Save and restore cwd since project-scope reads are relative.
-	origDir, err := os.Getwd()
-	if err != nil {
-		return "—"
-	}
-	if err := os.Chdir(projectPath); err != nil {
-		return "—"
-	}
-	defer os.Chdir(origDir) //nolint:errcheck
-
-	for _, dw := range writers {
-		entries, err := dw.Read(agent.ScopeProject)
-		if err != nil {
-			continue
-		}
-		if entry, ok := entries["telara"]; ok && entry.URL != "" {
-			if name, found := nameByURL[entry.URL]; found {
-				return name
-			}
-			// URL found but no name match — show a truncated URL.
-			url := entry.URL
-			if len(url) > 40 {
-				url = url[:37] + "..."
-			}
-			return url
+	// User configs first (most specific), then managed, then available.
+	for _, c := range resolved.User {
+		if !seen[c.ID] {
+			seen[c.ID] = true
+			result = append(result, c)
 		}
 	}
-	return "—"
+	for _, c := range resolved.Managed {
+		if !seen[c.ID] {
+			seen[c.ID] = true
+			result = append(result, c)
+		}
+	}
+	for _, c := range resolved.Available {
+		if !seen[c.ID] {
+			seen[c.ID] = true
+			result = append(result, c)
+		}
+	}
+	return result
 }
 
 // shortenPath replaces the user's home directory with ~ for display.
