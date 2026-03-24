@@ -152,7 +152,7 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 	fmt.Fprintf(os.Stdout, "Config:  %s\n", cfg.Name)
 	fmt.Fprintf(os.Stdout, "Tools:   %s\n", strings.Join(wired, ", "))
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Restart your tools to connect.")
+	fmt.Fprintln(os.Stdout, "Start a new session to connect.")
 	return nil
 }
 

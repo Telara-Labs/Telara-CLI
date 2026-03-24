@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -119,7 +120,7 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 		// First-time login or no snapshot: auto-wire detected tools with the
 		// tenant-scoped default config so Layer 1 is set up without any extra steps.
 		client := api.NewClient(prefs.APIURL, token)
-		autoWireTools(client, loginForce)
+		autoWireTools(client, whoami.TenantID, loginForce)
 	}
 	return nil
 }
@@ -166,24 +167,30 @@ func printLoginBanner(email, orgName string) {
 // we use it directly — no GenerateKey or ListDeployments calls needed. The
 // master key gives access to all tenant-scoped data sources and policies.
 //
-// If the tools are already wired (key exists in global settings) and force is
-// false, the call is a no-op — we never mint a new key just because the user
-// ran 'telara login' again.
+// If the tools are already wired with a key that belongs to the current tenant
+// and force is false, the call is a no-op — we never mint a new key just
+// because the user ran 'telara login' again.
 //
 // Failures are non-fatal — the user can always run 'telara config global' manually.
-func autoWireTools(client *api.Client, force bool) {
+func autoWireTools(client *api.Client, tenantID string, force bool) {
 	detected := agent.DetectedWriters()
 	if len(detected) == 0 {
 		return
 	}
 
-	// If not forced, skip re-generation when all detected tools are already wired.
-	// This prevents minting a new orphaned key on every 'telara login'.
+	// If not forced, skip re-generation when all detected tools are already
+	// wired with a key that belongs to the current tenant. This prevents
+	// minting a new orphaned key on every 'telara login' while ensuring an
+	// account switch always produces a fresh key.
 	if !force {
 		allWired := true
 		for _, w := range detected {
 			entries, err := w.Read(agent.ScopeGlobal)
 			if err != nil || entries["telara"].URL == "" {
+				allWired = false
+				break
+			}
+			if !keyBelongsToTenant(entries["telara"], tenantID) {
 				allWired = false
 				break
 			}
@@ -273,6 +280,23 @@ func autoWireTools(client *api.Client, force bool) {
 		fmt.Fprintln(os.Stdout)
 		fmt.Fprintln(os.Stdout)
 	}
+}
+
+// keyBelongsToTenant checks whether the API key stored in an MCPEntry belongs
+// to the given tenant. The key format is "telara_mcp_{tenant_id}_{hash}".
+// Returns false if the key is missing, malformed, or belongs to a different tenant.
+func keyBelongsToTenant(entry agent.MCPEntry, tenantID string) bool {
+	bearer := entry.Headers["Authorization"]
+	if bearer == "" {
+		return false
+	}
+	key := strings.TrimPrefix(bearer, "Bearer ")
+	// Expected format: telara_mcp_{32-char tenant_id}_{32-char hash}
+	parts := strings.SplitN(key, "_", 4) // ["telara", "mcp", "{tenant_id}", "{hash}"]
+	if len(parts) < 4 || parts[0] != "telara" || parts[1] != "mcp" {
+		return false
+	}
+	return parts[2] == tenantID
 }
 
 // restoreSnapshotAfterLogin silently restores the user's MCP config snapshot if one exists.
