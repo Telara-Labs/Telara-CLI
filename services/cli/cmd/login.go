@@ -32,6 +32,7 @@ var loginCmd = &cobra.Command{
 				client := api.NewClient(prefs.APIURL, existingToken)
 				whoami, err := client.ValidateToken(context.Background())
 				if err == nil {
+					ensureMCPConfig(client, whoami.TenantID)
 					fmt.Fprintf(os.Stdout, "Already authenticated as %s (%s). Run 'telara logout' first to switch accounts.\n", whoami.Email, whoami.OrgName)
 					return nil
 				}
@@ -115,13 +116,12 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	}
 	printLoginBanner(whoami.Email, whoami.OrgName)
 
-	restored := restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
-	if !restored {
-		// First-time login or no snapshot: auto-wire detected tools with the
-		// tenant-scoped default config so Layer 1 is set up without any extra steps.
-		client := api.NewClient(prefs.APIURL, token)
-		autoWireTools(client, whoami.TenantID, loginForce)
-	}
+	restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
+
+	// Always verify global MCP config is correct — even after snapshot restore,
+	// which may be partial (e.g. missing global claude-code entry).
+	client := api.NewClient(prefs.APIURL, token)
+	ensureMCPConfig(client, whoami.TenantID)
 	return nil
 }
 
@@ -279,6 +279,20 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		}
 		fmt.Fprintln(os.Stdout)
 		fmt.Fprintln(os.Stdout)
+	}
+}
+
+// ensureMCPConfig verifies that the MCP config in detected tools belongs to the
+// current tenant. If any tool is missing a config or has a stale key from a
+// different tenant, it forces regeneration. Called from the re-auth guard so
+// that "already authenticated" logins still repair broken MCP state.
+func ensureMCPConfig(client *api.Client, tenantID string) {
+	for _, w := range agent.DetectedWriters() {
+		entries, err := w.Read(agent.ScopeGlobal)
+		if err != nil || entries["telara"].URL == "" || !keyBelongsToTenant(entries["telara"], tenantID) {
+			autoWireTools(client, tenantID, true)
+			return
+		}
 	}
 }
 
