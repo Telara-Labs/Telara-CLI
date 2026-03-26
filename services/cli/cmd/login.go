@@ -222,7 +222,10 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		configName = cfg.Name
 
 		deps, err := client.ListDeployments(context.Background(), cfg.ID)
-		if err != nil || len(deps.Deployments) == 0 {
+		if err != nil {
+			return
+		}
+		if len(deps.Deployments) == 0 {
 			return
 		}
 		var dep *api.Deployment
@@ -287,9 +290,18 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 // different tenant, it forces regeneration. Called from the re-auth guard so
 // that "already authenticated" logins still repair broken MCP state.
 func ensureMCPConfig(client *api.Client, tenantID string) {
-	for _, w := range agent.DetectedWriters() {
+	writers := agent.DetectedWriters()
+	for _, w := range writers {
 		entries, err := w.Read(agent.ScopeGlobal)
-		if err != nil || entries["telara"].URL == "" || !keyBelongsToTenant(entries["telara"], tenantID) {
+		if err != nil {
+			autoWireTools(client, tenantID, true)
+			return
+		}
+		if entries["telara"].URL == "" {
+			autoWireTools(client, tenantID, true)
+			return
+		}
+		if !keyBelongsToTenant(entries["telara"], tenantID) {
 			autoWireTools(client, tenantID, true)
 			return
 		}
