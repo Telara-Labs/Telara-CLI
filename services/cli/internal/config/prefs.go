@@ -6,9 +6,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const defaultAPIURL = "https://api.telara.dev"
+
+// NormalizeAPIBaseURL trims whitespace and trailing slashes and fixes common double-scheme mistakes
+// (e.g. https://https://host) so MCP URLs built as base+"/v1/mcp/sse" stay valid.
+func NormalizeAPIBaseURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimSuffix(s, "/")
+	for strings.HasPrefix(s, "https://https://") {
+		s = strings.TrimPrefix(s, "https://")
+	}
+	for strings.HasPrefix(s, "http://https://") {
+		s = strings.TrimPrefix(s, "http://")
+	}
+	for strings.HasPrefix(s, "https://http://") {
+		s = strings.TrimPrefix(s, "https://")
+	}
+	return strings.TrimSuffix(s, "/")
+}
 
 // Prefs holds user-level CLI preferences persisted to config.json.
 type Prefs struct {
@@ -50,6 +68,7 @@ func Load() (*Prefs, error) {
 	if p.APIURL == "" {
 		p.APIURL = defaultAPIURL
 	}
+	p.APIURL = NormalizeAPIBaseURL(p.APIURL)
 
 	// Auto-migrate stale www.telara.dev URLs left over from before the static export migration.
 	// www.telera.dev is now a CDN-hosted static site and cannot proxy /v1/* requests.

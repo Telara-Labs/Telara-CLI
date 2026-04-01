@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, telara-amd64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
         run: cd services/cli && go test ./... -v -timeout 60s
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, telara-amd64]
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:

@@ -156,9 +156,11 @@ func initConfig() {
 		prefs = config.DefaultPrefs()
 	}
 	if rootAPIURL != "" {
-		prefs.APIURL = rootAPIURL
+		prefs.APIURL = config.NormalizeAPIBaseURL(rootAPIURL)
 	} else if envURL := os.Getenv("TELARA_API_URL"); envURL != "" {
-		prefs.APIURL = envURL
+		prefs.APIURL = config.NormalizeAPIBaseURL(envURL)
+	} else {
+		prefs.APIURL = config.NormalizeAPIBaseURL(prefs.APIURL)
 	}
 	if caCertPath != "" {
 		os.Setenv("TELARA_CA_CERT_PATH", caCertPath)

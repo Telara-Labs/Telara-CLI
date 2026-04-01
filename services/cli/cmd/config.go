@@ -228,13 +228,9 @@ and writes the selected MCP configuration to each tool's global settings.
 This becomes your default across all projects.
 
 If no name is given, you'll be prompted to select from available configurations.`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		nameOrID := ""
-		if len(args) == 1 {
-			nameOrID = args[0]
-		}
-		return runConfigGlobal(nameOrID)
+		return runConfigGlobal(strings.Join(args, " "))
 	},
 }
 
@@ -254,13 +250,9 @@ If no name is given, you'll be prompted to select from available configurations.
 Remember to add the generated config files to .gitignore:
   .mcp.json  .cursor/mcp.json  .vscode/mcp.json  .windsurf/mcp_config.json
   .codex/config.toml  .gemini/settings.json  .amazonq/mcp.json`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		nameOrID := ""
-		if len(args) == 1 {
-			nameOrID = args[0]
-		}
-		return runConfigProject(nameOrID)
+		return runConfigProject(strings.Join(args, " "))
 	},
 }
 
