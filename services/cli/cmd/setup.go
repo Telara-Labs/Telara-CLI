@@ -10,6 +10,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clicontext"
 )
 
 // toolKeyName returns a human-friendly API key name for a given tool,
@@ -146,6 +147,26 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 			for _, name := range wired {
 				_ = agent.RegisterProject(cwd, name)
 			}
+		}
+	}
+
+	// Auto-save a context so CLI diagnostic commands (doctor, whoami) can
+	// verify the key and display the active configuration.
+	// Global scope also sets the active context preference; project scope does not
+	// (project config is directory-specific and looked up via wired-state.json).
+	if store, err := newContextStore(); err == nil {
+		entry := clicontext.Context{
+			Name:         cfg.Name,
+			ConfigID:     cfg.ID,
+			ConfigName:   cfg.Name,
+			ScopeType:    dep.ScopeType,
+			ScopeID:      dep.ScopeID,
+			APIKeyID:     keyResp.KeyID,
+			APIKeyPrefix: keyResp.Prefix,
+			MCPURL:       mcpURL,
+		}
+		if err := store.Save(entry); err == nil && scope == agent.ScopeGlobal {
+			_ = store.SetActive(cfg.Name)
 		}
 	}
 

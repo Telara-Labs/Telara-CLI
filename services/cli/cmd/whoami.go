@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
@@ -31,7 +32,15 @@ var whoamiCmd = &cobra.Command{
 		display.PrintKV(os.Stdout, "Organization:", whoami.OrgName)
 		display.PrintKV(os.Stdout, "Token prefix:", whoami.TokenPrefix)
 		if prefs.ActiveContext != "" {
-			display.PrintKV(os.Stdout, "Context:", prefs.ActiveContext)
+			display.PrintKV(os.Stdout, "Global config:", prefs.ActiveContext)
+		}
+		wiredState, _ := agent.LoadWiredState()
+		if wiredState != nil && wiredState.Projects != nil {
+			if cwd, err := os.Getwd(); err == nil {
+				if wc, ok := wiredState.Projects[cwd]; ok && wc != nil {
+					display.PrintKV(os.Stdout, "Project config:", wc.ConfigName)
+				}
+			}
 		}
 		return nil
 	},

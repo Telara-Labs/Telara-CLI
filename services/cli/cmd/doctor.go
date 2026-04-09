@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clicontext"
@@ -75,7 +76,8 @@ Run this first when your AI tool isn't seeing your integrations or knowledge.`,
 			}))
 		}
 
-		results = append(results, runCheck("Checking context", checkActiveContext))
+		results = append(results, runCheck("Checking global context", checkGlobalContext))
+		results = append(results, runCheck("Checking project context", checkProjectContext))
 		results = append(results, runCheck("Checking gitignore", checkGitignore))
 
 		// Summary.
@@ -258,32 +260,50 @@ func checkAgentTools() []checkResult {
 	return results
 }
 
-// checkActiveContext verifies the active context and its API key.
-func checkActiveContext() checkResult {
+// checkGlobalContext verifies the global active context and its API key.
+func checkGlobalContext() checkResult {
 	name := clicontext.Resolve(rootContext, prefs.ActiveContext)
 	if name == "" {
 		return checkResult{
-			name:    "context",
+			name:    "global context",
 			status:  "skip",
-			message: "no active context set",
+			message: "no global config set — run: telara config global <name>",
+		}
+	}
+	return checkContextByName("global context", name)
+}
+
+// checkProjectContext verifies the project-scoped context for the current directory.
+func checkProjectContext() checkResult {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return checkResult{
+			name:    "project context",
+			status:  "skip",
+			message: "cannot determine working directory",
 		}
 	}
 
+	wiredState, _ := agent.LoadWiredState()
+	if wiredState == nil || wiredState.Projects == nil {
+		return checkResult{name: "project context", status: "skip", message: "no project config set for this directory"}
+	}
+	wc, ok := wiredState.Projects[cwd]
+	if !ok || wc == nil {
+		return checkResult{name: "project context", status: "skip", message: "no project config set for this directory"}
+	}
+	return checkContextByName("project context", wc.ConfigName)
+}
+
+// checkContextByName looks up a context by name and verifies its API key.
+func checkContextByName(checkName, contextName string) checkResult {
 	store, err := newContextStore()
 	if err != nil {
-		return checkResult{
-			name:    "context",
-			status:  "fail",
-			message: fmt.Sprintf("open context store: %v", err),
-		}
+		return checkResult{name: checkName, status: "fail", message: fmt.Sprintf("open context store: %v", err)}
 	}
-	c, err := store.Get(name)
+	c, err := store.Get(contextName)
 	if err != nil {
-		return checkResult{
-			name:    "context",
-			status:  "fail",
-			message: fmt.Sprintf("context %q not found in store", name),
-		}
+		return checkResult{name: checkName, status: "fail", message: fmt.Sprintf("context %q not found in store", contextName)}
 	}
 
 	// Try to verify the key is not revoked.
@@ -295,11 +315,7 @@ func checkActiveContext() checkResult {
 			for _, k := range keysResp.Keys {
 				if k.ID == c.APIKeyID {
 					if k.Revoked {
-						return checkResult{
-							name:    "context",
-							status:  "fail",
-							message: fmt.Sprintf("active: %s (config: %s) — key is REVOKED", c.Name, c.ConfigName),
-						}
+						return checkResult{name: checkName, status: "fail", message: fmt.Sprintf("%s — key is REVOKED", c.ConfigName)}
 					}
 					break
 				}
@@ -307,12 +323,9 @@ func checkActiveContext() checkResult {
 		}
 	}
 
-	return checkResult{
-		name:    "context",
-		status:  "pass",
-		message: fmt.Sprintf("active: %s (config: %s)", c.Name, c.ConfigName),
-	}
+	return checkResult{name: checkName, status: "pass", message: c.ConfigName}
 }
+
 
 // checkGitignore warns if any MCP settings files exist in the current
 // directory but are not covered by .gitignore.
