@@ -37,11 +37,12 @@ esac
 # Get latest version
 VERSION="${TELARA_VERSION:-}"
 if [ -z "$VERSION" ]; then
-  # Try primary CDN first, fall back to GitHub Releases API
-  VERSION="$(curl -fsSL "${PRIMARY_BASE_URL}/latest-version" 2>/dev/null)" || {
-    echo "Primary version endpoint unavailable, trying GitHub Releases..." >&2
+  # Try primary CDN first (check non-empty response), fall back to GitHub Releases API
+  VERSION="$(curl -fsSL "${PRIMARY_BASE_URL}/latest-version" 2>/dev/null)"
+  if [ -z "$VERSION" ]; then
+    echo "Primary version endpoint unavailable or empty, trying GitHub Releases..." >&2
     VERSION="$(curl -fsSL "${GITHUB_API_URL}" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
-  }
+  fi
 fi
 
 # Strip v prefix for filename (GoReleaser uses version without v)
@@ -66,8 +67,8 @@ FALLBACK_URL="${GITHUB_DOWNLOAD_URL}/${TAG}/${FILENAME}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-if ! curl -fsSL "$PRIMARY_URL" -o "$TMP/$FILENAME" 2>/dev/null; then
-  echo "Primary download unavailable, trying GitHub Releases..." >&2
+if ! curl -fsSL "$PRIMARY_URL" -o "$TMP/$FILENAME" 2>/dev/null || ! gzip -t "$TMP/$FILENAME" 2>/dev/null; then
+  echo "Primary download unavailable or invalid, trying GitHub Releases..." >&2
   curl -fsSL "$FALLBACK_URL" -o "$TMP/$FILENAME"
 fi
 
