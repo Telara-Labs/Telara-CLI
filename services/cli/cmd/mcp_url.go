@@ -11,6 +11,14 @@ func defaultMCPURL() string {
 	return strings.TrimRight(prefs.APIURL, "/") + "/v1/mcp/sse"
 }
 
+// streamableDefaultMCPURL returns the streamable-HTTP MCP endpoint (no /sse
+// suffix). Used by non-interactive provisioning, whose targets — Claude.ai org
+// connectors, CI runners, and MDM-managed Claude Code — all speak streamable
+// HTTP, not the legacy SSE transport.
+func streamableDefaultMCPURL() string {
+	return streamableMCPURL(defaultMCPURL())
+}
+
 func mcpURLForWriter(mcpURL string, w agent.AgentWriter) string {
 	if streamableMCPWriter(w) {
 		return streamableMCPURL(mcpURL)
@@ -32,15 +40,11 @@ func mcpEntryMatchesWriterEndpoint(w agent.AgentWriter, entry agent.MCPEntry) bo
 }
 
 func streamableMCPWriter(w agent.AgentWriter) bool {
-	if w == nil {
-		return false
-	}
-	switch w.Name() {
-	case "claude-code", "codex":
-		return true
-	default:
-		return false
-	}
+	// Every supported client now speaks the streamable-HTTP MCP transport, so we
+	// emit `type: http` + the /v1/mcp endpoint for all of them. The legacy SSE
+	// transport is no longer written: its split GET-stream + separate message
+	// POST dropped the auth header on the POST, causing intermittent 401s.
+	return w != nil
 }
 
 func normalizeMCPEntryForWriter(entry agent.MCPEntry, w agent.AgentWriter) agent.MCPEntry {

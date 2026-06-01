@@ -100,8 +100,9 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 		return fmt.Errorf("no supported agent tools detected — install Claude Code, Cursor, Windsurf, VS Code, Codex, Gemini CLI, or Amazon Q first")
 	}
 
+	keyName := toolKeyName(writers[0].Name())
 	keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
-		Name:      toolKeyName(writers[0].Name()),
+		Name:      keyName,
 		ScopeType: dep.ScopeType,
 		ScopeID:   dep.ScopeID,
 	})
@@ -130,6 +131,12 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 	if len(wired) == 0 {
 		return fmt.Errorf("failed to configure any tools")
 	}
+
+	// Replace, don't accumulate: revoke any prior key with the same name for
+	// this config so repeated `telara setup`/`config` runs on this machine
+	// don't pile up dead duplicate keys server-side. The raw key can't be
+	// re-fetched, so we mint a fresh one (written above) and retire the rest.
+	revokeSupersededKeys(client, cfg.ID, keyName, keyResp.KeyID)
 
 	// Persist which config was wired so `telara config` can show names.
 	switch scope {
@@ -170,6 +177,29 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "Start a new session to connect.")
 	return nil
+}
+
+// revokeSupersededKeys retires prior, still-active keys that share keyName for
+// this config (excluding the one just minted). This keeps exactly one live key
+// per machine+tool instead of leaving a trail of orphaned credentials behind on
+// every re-run. Best-effort: a listing or revoke failure is non-fatal since the
+// fresh key is already wired.
+func revokeSupersededKeys(client *api.Client, configID, keyName, keepKeyID string) {
+	if keyName == "" {
+		return
+	}
+	resp, err := client.ListKeys(context.Background(), configID)
+	if err != nil {
+		return
+	}
+	for _, k := range resp.Keys {
+		if k.Revoked || k.ID == keepKeyID || k.Name != keyName {
+			continue
+		}
+		if err := client.RevokeKey(context.Background(), k.ID, configID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to revoke superseded key %s: %v\n", k.Prefix, err)
+		}
+	}
 }
 
 // resolveConfig resolves a config by name-or-id, or prompts interactively.

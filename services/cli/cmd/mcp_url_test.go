@@ -17,6 +17,18 @@ func TestDefaultMCPURL(t *testing.T) {
 	}
 }
 
+func TestStreamableDefaultMCPURL(t *testing.T) {
+	orig := prefs
+	prefs = &config.Prefs{APIURL: "https://api.telara.dev/"}
+	defer func() { prefs = orig }()
+
+	// Provisioning (claude-web / ci / managed) targets streamable-HTTP clients,
+	// so the fallback endpoint must drop the legacy /sse suffix.
+	if got, want := streamableDefaultMCPURL(), "https://api.telara.dev/v1/mcp"; got != want {
+		t.Fatalf("streamableDefaultMCPURL() = %q, want %q", got, want)
+	}
+}
+
 func TestMCPURLForWriter_CodexUsesStreamableHTTP(t *testing.T) {
 	writers := map[string]agent.AgentWriter{
 		"claude-code": agent.NewClaudeCodeWriter(),
@@ -65,11 +77,20 @@ func TestMCPURLForWriter_CodexUsesStreamableHTTP(t *testing.T) {
 	}
 }
 
-func TestMCPURLForWriter_SSEClientsKeepSSEEndpoint(t *testing.T) {
-	w := agent.NewCursorWriter()
+func TestMCPURLForWriter_AllClientsUseStreamableHTTP(t *testing.T) {
 	in := "https://api.telara.dev/v1/mcp/sse"
-	if got := mcpURLForWriter(in, w); got != in {
-		t.Fatalf("mcpURLForWriter(%q, cursor) = %q, want unchanged", in, got)
+	want := "https://api.telara.dev/v1/mcp"
+	for _, w := range []agent.AgentWriter{
+		agent.NewCursorWriter(),
+		agent.NewWindsurfWriter(),
+		agent.NewVSCodeWriter(),
+	} {
+		if got := mcpURLForWriter(in, w); got != want {
+			t.Fatalf("mcpURLForWriter(%q, %s) = %q, want %q", in, w.Name(), got, want)
+		}
+		if got := mcpTypeForWriter(w); got != "http" {
+			t.Fatalf("mcpTypeForWriter(%s) = %q, want %q", w.Name(), got, "http")
+		}
 	}
 }
 
@@ -115,8 +136,14 @@ func TestNewMCPEntryForWriterUsesTransportForAgent(t *testing.T) {
 		{
 			name:     "cursor",
 			writer:   agent.NewCursorWriter(),
-			wantType: "sse",
-			wantURL:  "https://api.telara.dev/v1/mcp/sse",
+			wantType: "http",
+			wantURL:  "https://api.telara.dev/v1/mcp",
+		},
+		{
+			name:     "windsurf",
+			writer:   agent.NewWindsurfWriter(),
+			wantType: "http",
+			wantURL:  "https://api.telara.dev/v1/mcp",
 		},
 	}
 

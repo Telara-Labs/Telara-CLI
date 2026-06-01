@@ -87,9 +87,9 @@ func runProvisionClaudeWeb(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	mcpURL := keyResp.MCPURL
+	mcpURL := streamableMCPURL(keyResp.MCPURL)
 	if mcpURL == "" {
-		mcpURL = prefs.APIURL + "/v1/mcp/sse"
+		mcpURL = streamableDefaultMCPURL()
 	}
 
 	fmt.Fprintln(os.Stdout, "Claude.ai Organization Connector Setup")
@@ -128,9 +128,9 @@ func runProvisionCI(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	mcpURL := keyResp.MCPURL
+	mcpURL := streamableMCPURL(keyResp.MCPURL)
 	if mcpURL == "" {
-		mcpURL = prefs.APIURL + "/v1/mcp/sse"
+		mcpURL = streamableDefaultMCPURL()
 	}
 
 	fmt.Fprintln(os.Stdout, "CI/CD Service Account Key")
@@ -173,15 +173,15 @@ func runProvisionManaged(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	mcpURL := keyResp.MCPURL
+	mcpURL := streamableMCPURL(keyResp.MCPURL)
 	if mcpURL == "" {
-		mcpURL = prefs.APIURL + "/v1/mcp/sse"
+		mcpURL = streamableDefaultMCPURL()
 	}
 
 	managed := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			"telara": map[string]interface{}{
-				"type": "sse",
+				"type": "http",
 				"url":  mcpURL,
 				"headers": map[string]string{
 					"Authorization": "Bearer " + keyResp.RawKey,
