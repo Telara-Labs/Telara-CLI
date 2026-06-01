@@ -111,17 +111,16 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 
 	mcpURL := keyResp.MCPURL
 	if mcpURL == "" {
-		mcpURL = prefs.APIURL + "/v1/mcp/sse"
-	}
-
-	entry := agent.MCPEntry{
-		Type:    "sse",
-		URL:     mcpURL,
-		Headers: map[string]string{"Authorization": "Bearer " + keyResp.RawKey},
+		mcpURL = defaultMCPURL()
 	}
 
 	var wired []string
 	for _, w := range writers {
+		entry := agent.MCPEntry{
+			Type:    "sse",
+			URL:     mcpURLForWriter(mcpURL, w),
+			Headers: map[string]string{"Authorization": "Bearer " + keyResp.RawKey},
+		}
 		if err := w.Write(scope, "telara", entry); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to configure %s: %v\n", w.Name(), err)
 			continue

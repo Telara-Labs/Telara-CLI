@@ -190,6 +190,10 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 				allWired = false
 				break
 			}
+			if !mcpEntryMatchesWriterEndpoint(w, entries["telara"]) {
+				allWired = false
+				break
+			}
 			if !keyBelongsToTenant(entries["telara"], tenantID) {
 				allWired = false
 				break
@@ -252,17 +256,16 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 	}
 
 	if mcpURL == "" {
-		mcpURL = prefs.APIURL + "/v1/mcp/sse"
-	}
-
-	entry := agent.MCPEntry{
-		Type:    "sse",
-		URL:     mcpURL,
-		Headers: map[string]string{"Authorization": "Bearer " + rawKey},
+		mcpURL = defaultMCPURL()
 	}
 
 	var wired []string
 	for _, w := range detected {
+		entry := agent.MCPEntry{
+			Type:    "sse",
+			URL:     mcpURLForWriter(mcpURL, w),
+			Headers: map[string]string{"Authorization": "Bearer " + rawKey},
+		}
 		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
 			continue
 		}
@@ -304,6 +307,18 @@ func ensureMCPConfig(client *api.Client, tenantID string) {
 		if !keyBelongsToTenant(entries["telara"], tenantID) {
 			autoWireTools(client, tenantID, true)
 			return
+		}
+		if !mcpEntryMatchesWriterEndpoint(w, entries["telara"]) {
+			entry := entries["telara"]
+			entry.URL = mcpURLForWriter(entry.URL, w)
+			if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
+				autoWireTools(client, tenantID, true)
+				return
+			}
+			if pw, ok := w.(agent.PermissionWriter); ok {
+				_ = pw.WritePermissions(agent.ScopeGlobal, "telara")
+			}
+			continue
 		}
 	}
 }
@@ -351,6 +366,7 @@ func restoreSnapshotAfterLogin(userID, tenantID string) bool {
 		if w == nil {
 			continue
 		}
+		entry := se.Entry
 
 		var scope agent.Scope
 		switch se.Scope {
@@ -370,7 +386,8 @@ func restoreSnapshotAfterLogin(userID, tenantID string) bool {
 			continue
 		}
 
-		if err := w.Write(scope, se.ServerName, se.Entry); err != nil {
+		entry.URL = mcpURLForWriter(entry.URL, w)
+		if err := w.Write(scope, se.ServerName, entry); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore %s %s config: %v\n", se.Scope, se.Tool, err)
 			continue
 		}
