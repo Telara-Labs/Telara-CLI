@@ -69,7 +69,7 @@ func tomlMapToEntry(raw interface{}) (MCPEntry, bool) {
 	if !ok {
 		return MCPEntry{}, false
 	}
-	entry := MCPEntry{Type: "sse"}
+	entry := MCPEntry{Type: "http"}
 	if u, ok := m["url"].(string); ok {
 		entry.URL = u
 	}

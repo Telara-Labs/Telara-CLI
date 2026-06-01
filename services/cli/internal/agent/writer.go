@@ -14,8 +14,8 @@ const (
 
 // MCPEntry describes a single MCP server entry to be written into an agent config.
 type MCPEntry struct {
-	Type    string            // "sse" or "stdio"
-	URL     string            // for type=sse
+	Type    string            // "sse", "http", or "stdio"
+	URL     string            // for type=sse or type=http
 	Headers map[string]string // e.g. {"Authorization": "Bearer ..."}
 }
 

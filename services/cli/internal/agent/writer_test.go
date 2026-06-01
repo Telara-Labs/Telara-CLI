@@ -20,6 +20,12 @@ func sampleEntry() MCPEntry {
 	}
 }
 
+func codexSampleEntry() MCPEntry {
+	entry := sampleEntry()
+	entry.Type = "http"
+	return entry
+}
+
 // assertEntry fatals if the named server is absent or doesn't match want.
 func assertEntry(t *testing.T, got map[string]MCPEntry, name string, want MCPEntry) {
 	t.Helper()
@@ -700,7 +706,7 @@ func TestCodex_Global_WriteReadRemove(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	w := NewCodexWriter()
-	entry := sampleEntry()
+	entry := codexSampleEntry()
 
 	if err := w.Write(ScopeGlobal, "telara", entry); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -732,7 +738,7 @@ func TestCodex_Project_WriteReadRemove(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	w := NewCodexWriter()
-	entry := sampleEntry()
+	entry := codexSampleEntry()
 
 	if err := w.Write(ScopeProject, "telara", entry); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -763,7 +769,7 @@ func TestCodex_Managed_Unsupported(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	w := NewCodexWriter()
-	if err := w.Write(ScopeManaged, "telara", sampleEntry()); err == nil {
+	if err := w.Write(ScopeManaged, "telara", codexSampleEntry()); err == nil {
 		t.Fatal("expected error for ScopeManaged on codex, got nil")
 	}
 }
@@ -773,7 +779,7 @@ func TestCodex_WriteRemovePermissions(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	w := NewCodexWriter()
-	if err := w.Write(ScopeGlobal, "telara", sampleEntry()); err != nil {
+	if err := w.Write(ScopeGlobal, "telara", codexSampleEntry()); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -842,7 +848,7 @@ func TestCodex_Global_PreservesExistingTOMLKeys(t *testing.T) {
 	os.WriteFile(filepath.Join(codexDir, "config.toml"), data, 0600)
 
 	w := NewCodexWriter()
-	if err := w.Write(ScopeGlobal, "telara", sampleEntry()); err != nil {
+	if err := w.Write(ScopeGlobal, "telara", codexSampleEntry()); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -868,7 +874,7 @@ func TestCodex_TOMLFormat(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	w := NewCodexWriter()
-	if err := w.Write(ScopeGlobal, "telara", sampleEntry()); err != nil {
+	if err := w.Write(ScopeGlobal, "telara", codexSampleEntry()); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 

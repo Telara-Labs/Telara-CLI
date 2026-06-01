@@ -12,14 +12,49 @@ func defaultMCPURL() string {
 }
 
 func mcpURLForWriter(mcpURL string, w agent.AgentWriter) string {
-	if w != nil && w.Name() == "codex" {
+	if streamableMCPWriter(w) {
 		return streamableMCPURL(mcpURL)
 	}
 	return mcpURL
 }
 
+func mcpTypeForWriter(w agent.AgentWriter) string {
+	if streamableMCPWriter(w) {
+		return "http"
+	}
+	return "sse"
+}
+
 func mcpEntryMatchesWriterEndpoint(w agent.AgentWriter, entry agent.MCPEntry) bool {
-	return entry.URL != "" && entry.URL == mcpURLForWriter(entry.URL, w)
+	return entry.URL != "" &&
+		entry.URL == mcpURLForWriter(entry.URL, w) &&
+		entry.Type == mcpTypeForWriter(w)
+}
+
+func streamableMCPWriter(w agent.AgentWriter) bool {
+	if w == nil {
+		return false
+	}
+	switch w.Name() {
+	case "claude-code", "codex":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeMCPEntryForWriter(entry agent.MCPEntry, w agent.AgentWriter) agent.MCPEntry {
+	entry.URL = mcpURLForWriter(entry.URL, w)
+	entry.Type = mcpTypeForWriter(w)
+	return entry
+}
+
+func newMCPEntryForWriter(mcpURL, rawKey string, w agent.AgentWriter) agent.MCPEntry {
+	return agent.MCPEntry{
+		Type:    mcpTypeForWriter(w),
+		URL:     mcpURLForWriter(mcpURL, w),
+		Headers: map[string]string{"Authorization": "Bearer " + rawKey},
+	}
 }
 
 func streamableMCPURL(mcpURL string) string {

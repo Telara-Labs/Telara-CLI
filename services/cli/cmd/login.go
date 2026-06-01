@@ -261,11 +261,7 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 
 	var wired []string
 	for _, w := range detected {
-		entry := agent.MCPEntry{
-			Type:    "sse",
-			URL:     mcpURLForWriter(mcpURL, w),
-			Headers: map[string]string{"Authorization": "Bearer " + rawKey},
-		}
+		entry := newMCPEntryForWriter(mcpURL, rawKey, w)
 		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
 			continue
 		}
@@ -310,7 +306,7 @@ func ensureMCPConfig(client *api.Client, tenantID string) {
 		}
 		if !mcpEntryMatchesWriterEndpoint(w, entries["telara"]) {
 			entry := entries["telara"]
-			entry.URL = mcpURLForWriter(entry.URL, w)
+			entry = normalizeMCPEntryForWriter(entry, w)
 			if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
 				autoWireTools(client, tenantID, true)
 				return
@@ -386,7 +382,7 @@ func restoreSnapshotAfterLogin(userID, tenantID string) bool {
 			continue
 		}
 
-		entry.URL = mcpURLForWriter(entry.URL, w)
+		entry = normalizeMCPEntryForWriter(entry, w)
 		if err := w.Write(scope, se.ServerName, entry); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore %s %s config: %v\n", se.Scope, se.Tool, err)
 			continue

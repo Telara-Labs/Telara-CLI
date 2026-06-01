@@ -18,7 +18,10 @@ func TestDefaultMCPURL(t *testing.T) {
 }
 
 func TestMCPURLForWriter_CodexUsesStreamableHTTP(t *testing.T) {
-	w := agent.NewCodexWriter()
+	writers := map[string]agent.AgentWriter{
+		"claude-code": agent.NewClaudeCodeWriter(),
+		"codex":       agent.NewCodexWriter(),
+	}
 	tests := []struct {
 		name string
 		in   string
@@ -51,32 +54,84 @@ func TestMCPURLForWriter_CodexUsesStreamableHTTP(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := mcpURLForWriter(tt.in, w); got != tt.want {
-				t.Fatalf("mcpURLForWriter(%q, codex) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
+	for writerName, w := range writers {
+		for _, tt := range tests {
+			t.Run(writerName+"/"+tt.name, func(t *testing.T) {
+				if got := mcpURLForWriter(tt.in, w); got != tt.want {
+					t.Fatalf("mcpURLForWriter(%q, %s) = %q, want %q", tt.in, writerName, got, tt.want)
+				}
+			})
+		}
 	}
 }
 
 func TestMCPURLForWriter_SSEClientsKeepSSEEndpoint(t *testing.T) {
-	w := agent.NewClaudeCodeWriter()
+	w := agent.NewCursorWriter()
 	in := "https://api.telara.dev/v1/mcp/sse"
 	if got := mcpURLForWriter(in, w); got != in {
-		t.Fatalf("mcpURLForWriter(%q, claude-code) = %q, want unchanged", in, got)
+		t.Fatalf("mcpURLForWriter(%q, cursor) = %q, want unchanged", in, got)
 	}
 }
 
 func TestMCPEntryMatchesWriterEndpoint(t *testing.T) {
 	codex := agent.NewCodexWriter()
-	stale := agent.MCPEntry{URL: "https://api.telara.dev/v1/mcp/sse"}
-	current := agent.MCPEntry{URL: "https://api.telara.dev/v1/mcp"}
+	staleURL := agent.MCPEntry{Type: "http", URL: "https://api.telara.dev/v1/mcp/sse"}
+	staleType := agent.MCPEntry{Type: "sse", URL: "https://api.telara.dev/v1/mcp"}
+	current := agent.MCPEntry{Type: "http", URL: "https://api.telara.dev/v1/mcp"}
 
-	if mcpEntryMatchesWriterEndpoint(codex, stale) {
+	if mcpEntryMatchesWriterEndpoint(codex, staleURL) {
 		t.Fatal("expected stale Codex SSE URL to need endpoint repair")
+	}
+	if mcpEntryMatchesWriterEndpoint(codex, staleType) {
+		t.Fatal("expected stale Codex SSE type to need endpoint repair")
 	}
 	if !mcpEntryMatchesWriterEndpoint(codex, current) {
 		t.Fatal("expected Codex streamable URL to match")
+	}
+}
+
+func TestNewMCPEntryForWriterUsesTransportForAgent(t *testing.T) {
+	rawKey := "secret"
+	mcpURL := "https://api.telara.dev/v1/mcp/sse"
+
+	tests := []struct {
+		name     string
+		writer   agent.AgentWriter
+		wantType string
+		wantURL  string
+	}{
+		{
+			name:     "claude-code",
+			writer:   agent.NewClaudeCodeWriter(),
+			wantType: "http",
+			wantURL:  "https://api.telara.dev/v1/mcp",
+		},
+		{
+			name:     "codex",
+			writer:   agent.NewCodexWriter(),
+			wantType: "http",
+			wantURL:  "https://api.telara.dev/v1/mcp",
+		},
+		{
+			name:     "cursor",
+			writer:   agent.NewCursorWriter(),
+			wantType: "sse",
+			wantURL:  "https://api.telara.dev/v1/mcp/sse",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := newMCPEntryForWriter(mcpURL, rawKey, tt.writer)
+			if entry.Type != tt.wantType {
+				t.Fatalf("entry.Type = %q, want %q", entry.Type, tt.wantType)
+			}
+			if entry.URL != tt.wantURL {
+				t.Fatalf("entry.URL = %q, want %q", entry.URL, tt.wantURL)
+			}
+			if got, want := entry.Headers["Authorization"], "Bearer "+rawKey; got != want {
+				t.Fatalf("Authorization header = %q, want %q", got, want)
+			}
+		})
 	}
 }

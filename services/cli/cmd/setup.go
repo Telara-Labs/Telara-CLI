@@ -116,11 +116,7 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 
 	var wired []string
 	for _, w := range writers {
-		entry := agent.MCPEntry{
-			Type:    "sse",
-			URL:     mcpURLForWriter(mcpURL, w),
-			Headers: map[string]string{"Authorization": "Bearer " + keyResp.RawKey},
-		}
+		entry := newMCPEntryForWriter(mcpURL, keyResp.RawKey, w)
 		if err := w.Write(scope, "telara", entry); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to configure %s: %v\n", w.Name(), err)
 			continue
