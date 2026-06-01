@@ -1,0 +1,23 @@
+# Local environment and secret material
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.*.example
+!.env.*.sample
+*.env
+*.local
+
+# Private keys and service account exports
+*.key
+*.pem
+*.p8
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+sa-key*.json
+*sa-key*.json
+service-account*.json
+*-service-account.json
+gcp-key.json
