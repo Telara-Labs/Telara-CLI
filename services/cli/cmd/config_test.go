@@ -173,6 +173,45 @@ func TestConfigShow_Success(t *testing.T) {
 	}
 }
 
+// TestConfigStatusHints_NoNamePlaceholder guards the fix for the bug where the
+// "Suggested actions" hints execed `telara config global <name>` with a literal
+// "<name>", which resolveConfig treated as a config name and failed to find.
+// The Command argv must be the bare no-arg form so pressing 1/2 launches the
+// interactive selector; "<name>" may only appear in the Description.
+func TestConfigStatusHints_NoNamePlaceholder(t *testing.T) {
+	hints := configStatusHints()
+	if len(hints) == 0 {
+		t.Fatal("expected at least one status hint")
+	}
+
+	wantCommands := map[string][]string{
+		"telara config global <name>":  {"telara", "config", "global"},
+		"telara config project <name>": {"telara", "config", "project"},
+	}
+
+	for _, h := range hints {
+		for _, arg := range h.Command {
+			if strings.Contains(arg, "<name>") {
+				t.Errorf("hint %q has a literal placeholder in Command argv: %v", h.Description, h.Command)
+			}
+		}
+		want, ok := wantCommands[h.Description]
+		if !ok {
+			continue
+		}
+		if len(h.Command) != len(want) {
+			t.Errorf("hint %q: got Command %v, want %v", h.Description, h.Command, want)
+			continue
+		}
+		for i := range want {
+			if h.Command[i] != want[i] {
+				t.Errorf("hint %q: got Command %v, want %v", h.Description, h.Command, want)
+				break
+			}
+		}
+	}
+}
+
 // Compile-time check: *api errors should be detectable with errors.As.
 func TestAPIError_ErrorsAs(t *testing.T) {
 	// Just checks that the errors package interoperability works as expected

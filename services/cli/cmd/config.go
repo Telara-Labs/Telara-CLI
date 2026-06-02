@@ -425,11 +425,21 @@ func runConfigStatus() error {
 		}
 	}
 
-	display.ShowHints("", []display.ActionHint{
-		{Label: "Set global config", Command: []string{"telara", "config", "global", "<name>"}, Description: "telara config global <name>"},
-		{Label: "Set project config", Command: []string{"telara", "config", "project", "<name>"}, Description: "telara config project <name>"},
-	})
+	display.ShowHints("", configStatusHints())
 	return nil
+}
+
+// configStatusHints returns the numbered "Suggested actions" shown after
+// `telara config`. The Command argv must NOT include a literal "<name>"
+// placeholder — pressing a number execs the argv verbatim, and the no-arg
+// form (`telara config global` / `telara config project`) is what triggers
+// the interactive config selector via resolveConfig(""). The "<name>" stays
+// in Description for display only.
+func configStatusHints() []display.ActionHint {
+	return []display.ActionHint{
+		{Label: "Set global config", Command: []string{"telara", "config", "global"}, Description: "telara config global <name>"},
+		{Label: "Set project config", Command: []string{"telara", "config", "project"}, Description: "telara config project <name>"},
+	}
 }
 
 // deduplicateConfigs merges all resolve buckets and deduplicates by config ID.
