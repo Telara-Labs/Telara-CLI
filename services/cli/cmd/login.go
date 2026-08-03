@@ -14,6 +14,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 )
 
@@ -122,7 +123,44 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	// which may be partial (e.g. missing global claude-code entry).
 	client := api.NewClient(prefs.APIURL, token)
 	ensureMCPConfig(client, whoami.TenantID)
+
+	ensureScanSchedule(token)
 	return nil
+}
+
+// ensureScanSchedule installs the recurring, unattended discovery scan.
+//
+// Users are not expected to run `telara scan` by hand. Estate coverage is only
+// truthful if scans recur — evidence freshness and per-scope completeness decay
+// to stale otherwise, and the product would start claiming coverage it does not
+// have.
+//
+// The scan destination is compiled in (see config.ScanSubmitEndpoint), so
+// scheduling it cannot be abused to redirect a fleet's evidence.
+//
+// A failure here never fails login: the user is authenticated either way, and
+// an unattended scan is worthless if it locks someone out of the CLI.
+func ensureScanSchedule(token string) {
+	// The scan submits to the pinned endpoint, so it needs a token stored under
+	// THAT host. When the login endpoint differs (dev builds), mirror it across
+	// so the scheduled run can authenticate.
+	scanEndpoint := config.ScanSubmitEndpoint()
+	if scanEndpoint != prefs.APIURL {
+		if _, err := auth.LoadToken(scanEndpoint); err != nil {
+			_ = auth.SaveToken(scanEndpoint, token)
+		}
+	}
+
+	status, err := schedule.Install()
+	if err != nil {
+		// Non-fatal and quiet about the reason on unsupported platforms.
+		fmt.Fprintf(os.Stderr, "Note: automatic daily estate scan not installed (%v)\n", err)
+		fmt.Fprintln(os.Stderr, "      Run `telara scan` manually, or deploy the schedule via MDM.")
+		return
+	}
+	fmt.Fprintf(os.Stdout, "Automatic daily estate scan enabled (%s)\n", status.Path)
+	fmt.Fprintln(os.Stdout, "  Inspect what it sends:  telara scan --dry-run")
+	fmt.Fprintln(os.Stdout, "  Turn it off:            telara scan --uninstall-schedule")
 }
 
 // printLoginBanner prints the Telara logo, auth identity, and quick-start commands.

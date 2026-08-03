@@ -20,6 +20,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/discovery"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
 
@@ -38,6 +39,9 @@ Use --dry-run to print exactly what would leave this machine without submitting.
 func init() {
 	scanCmd.Flags().Bool("dry-run", false, "Print the discovery report as indented JSON and submit nothing")
 	scanCmd.Flags().Bool("json", false, "Emit machine-readable JSON output")
+	scanCmd.Flags().Bool("install-schedule", false, "Install the recurring daily scan and exit")
+	scanCmd.Flags().Bool("uninstall-schedule", false, "Remove the recurring daily scan and exit")
+	scanCmd.Flags().Bool("schedule-status", false, "Show whether the recurring scan is installed and exit")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -45,7 +49,50 @@ func runScan(cmd *cobra.Command, args []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	asJSON, _ := cmd.Flags().GetBool("json")
 
-	token, err := auth.LoadToken(prefs.APIURL)
+	// Schedule management short-circuits the scan itself. These exist so the
+	// recurring job is inspectable and revocable by the person whose machine it
+	// runs on — an endpoint agent nobody can see or turn off is malware
+	// behaviour, not security tooling.
+	if v, _ := cmd.Flags().GetBool("schedule-status"); v {
+		st := schedule.Current()
+		state := "not installed"
+		if st.Installed {
+			state = "installed"
+		}
+		display.PrintKV(os.Stdout, "Recurring scan:", state)
+		if st.Path != "" {
+			display.PrintKV(os.Stdout, "Unit file:", st.Path)
+		}
+		display.PrintKV(os.Stdout, "Submits to:", config.ScanSubmitEndpoint())
+		return nil
+	}
+	if v, _ := cmd.Flags().GetBool("uninstall-schedule"); v {
+		if err := schedule.Uninstall(); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, "Recurring estate scan removed.")
+		return nil
+	}
+	if v, _ := cmd.Flags().GetBool("install-schedule"); v {
+		st, err := schedule.Install()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "Recurring estate scan installed (%s)\n", st.Path)
+		return nil
+	}
+
+	// The scan destination is compiled in and cannot be redirected at runtime.
+	// prefs.APIURL / --api-url / TELARA_API_URL deliberately do NOT apply here:
+	// discovery evidence must reach the tenant's own estate, and a runtime knob
+	// would let anyone redirect a fleet's output or point their own machine at
+	// nothing to vanish from inventory.
+	endpoint := config.ScanSubmitEndpoint()
+	if config.ScanEndpointIsOverridden() {
+		fmt.Fprintf(os.Stderr, "WARNING: this is a non-production build; scans submit to %s\n", endpoint)
+	}
+
+	token, err := auth.LoadToken(endpoint)
 	if err != nil {
 		return fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
 	}
@@ -71,7 +118,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Configurations pointing at this tenant's own Telara endpoint are
 	// discovered-managed; everything else stays discovered-unmediated. Matching
 	// is on host, not on the server's display name.
-	discovery.ApplyManagedEndpoints(&report, []string{prefs.APIURL})
+	discovery.ApplyManagedEndpoints(&report, []string{endpoint})
 
 	summary := discovery.Summarize(report)
 
@@ -87,7 +134,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	client := api.NewClient(prefs.APIURL, token)
+	client := api.NewClient(endpoint, token)
 	spinner := display.NewSpinner()
 	if !asJSON {
 		spinner.Start("Submitting discovery report...")

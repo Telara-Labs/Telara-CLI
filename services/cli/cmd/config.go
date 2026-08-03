@@ -201,7 +201,7 @@ var configKeysCmd = &cobra.Command{
 			if k.Revoked {
 				status = "revoked"
 			}
-			expires := k.ExpiresAt
+			expires := k.ExpiresAt.String()
 			if expires == "" {
 				expires = "never"
 			}
@@ -209,7 +209,7 @@ var configKeysCmd = &cobra.Command{
 			if k.ScopeID != "" {
 				scope = k.ScopeType + "/" + k.ScopeID
 			}
-			t.AddRow(k.Name, k.Prefix, scope, k.CreatedAt, expires, status)
+			t.AddRow(k.Name, k.Prefix, scope, k.CreatedAt.String(), expires, status)
 		}
 		t.Print(os.Stdout)
 		return nil
