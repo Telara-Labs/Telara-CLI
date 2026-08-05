@@ -104,9 +104,11 @@ Generate credentials for environments where the CLI isn't available.
 
 | Command | Description |
 |---------|-------------|
+| `telara otlp` | Mint a tenant MCP key and print `OTEL_*` exports (Claude Code, Cowork, frameworks). Alias: `telara provision otlp` |
 | `telara provision claude-web` | Credentials for Claude.ai (Anthropic Organization Connector) |
 | `telara provision ci` | Service account key for CI/CD pipelines |
 | `telara provision managed` | Config for enterprise MDM / GPO fleet deployment |
+| `telara provision otlp` | Same as `telara otlp` |
 
 ### Diagnostics
 

@@ -43,6 +43,27 @@ var provisionManagedCmd = &cobra.Command{
 	RunE:  runProvisionManaged,
 }
 
+// provisionOTLPCmd mirrors top-level `telara otlp` under the provision family
+// (CI/MDM/non-interactive credential printouts live here — TENG-1868).
+var provisionOTLPCmd = &cobra.Command{
+	Use:   "otlp",
+	Short: "Mint a tenant MCP key and print OTEL_* exports for Claude Code / Cowork / frameworks",
+	Long:  otlpCmd.Long,
+	RunE:  runOTLP,
+}
+
+func init() {
+	provisionCmd.PersistentFlags().StringVar(&provisionConfigName, "config", "", "MCP configuration name or ID")
+	provisionCICmd.Flags().StringVar(&provisionServiceAccount, "service-account", "ci-service-account", "Service account name")
+	provisionManagedCmd.Flags().StringVarP(&provisionOutputPath, "output", "o", "-", "Output file path (- for stdout)")
+	provisionOTLPCmd.Flags().Bool("print-only", false, "Print env exports without minting a new key (requires --api-key)")
+	provisionOTLPCmd.Flags().String("api-key", "", "Existing telara_mcp_... key to embed in the printed exports")
+	provisionOTLPCmd.Flags().String("name", "", "Name for a newly minted MCP API key (default: otlp-<hostname>)")
+
+	provisionCmd.AddCommand(provisionClaudeWebCmd, provisionCICmd, provisionManagedCmd, provisionOTLPCmd)
+	rootCmd.AddCommand(provisionCmd)
+}
+
 func provisionClient() (*api.Client, error) {
 	token, err := auth.LoadToken(prefs.APIURL)
 	if err != nil {
@@ -210,13 +231,4 @@ func runProvisionManaged(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(os.Stdout, "  Linux (GPO):   Deploy to /etc/claude-code/managed-mcp.json")
 	fmt.Fprintln(os.Stdout, "  Windows (GPO): Deploy to C:\\ProgramData\\ClaudeCode\\managed-mcp.json")
 	return nil
-}
-
-func init() {
-	provisionCmd.PersistentFlags().StringVar(&provisionConfigName, "config", "", "MCP configuration name or ID")
-	provisionCICmd.Flags().StringVar(&provisionServiceAccount, "service-account", "ci-service-account", "Service account name")
-	provisionManagedCmd.Flags().StringVarP(&provisionOutputPath, "output", "o", "-", "Output file path (- for stdout)")
-
-	provisionCmd.AddCommand(provisionClaudeWebCmd, provisionCICmd, provisionManagedCmd)
-	rootCmd.AddCommand(provisionCmd)
 }
