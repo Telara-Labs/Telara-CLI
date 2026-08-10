@@ -42,11 +42,16 @@ type DiscoveredServer struct {
 }
 
 // ConfigScanResult describes scanning one client family and scope pair.
+//
+// Servers and Skills are separate asset classes sharing one scope result so that
+// coverage and tombstone authority stay defined once (see report.go). A given
+// scan populates one or the other, never both.
 type ConfigScanResult struct {
 	ClientFamily string             `json:"clientFamily"`
 	Scope        string             `json:"scope"`
 	PathClass    string             `json:"pathClass"`
 	Servers      []DiscoveredServer `json:"servers"`
+	Skills       []DiscoveredSkill  `json:"skills,omitempty"`
 	Status       ScanStatus         `json:"status"`
 	ErrorClass   string             `json:"errorClass,omitempty"`
 }

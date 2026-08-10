@@ -20,6 +20,13 @@ const (
 	ScopeProject = "project"
 	ScopeManaged = "managed"
 
+	// Skill roots are their own collection boundary, not the MCP-config scope
+	// under a different name. Reusing ScopeGlobal would make two different
+	// scans collide on one scope key, double-counting coverage and letting an
+	// absent skills directory license a tombstone against MCP configuration.
+	ScopeGlobalSkills  = "global-skills"
+	ScopeProjectSkills = "project-skills"
+
 	ClientClaudeCode = "claude-code"
 	ClientCursor     = "cursor"
 	ClientWindsurf   = "windsurf"

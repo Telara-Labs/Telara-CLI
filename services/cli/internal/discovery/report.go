@@ -46,6 +46,15 @@ const (
 	WireControlDiscoveredManaged    = "AI_ESTATE_CONTROL_STATE_DISCOVERED_MANAGED"
 )
 
+// Resource kinds carried on an assertion. An agent skill is a distinct kind, not
+// an MCP configuration with different fields: it has no endpoint, no credential
+// and no transport, and conflating the two would let skill counts silently
+// inflate MCP coverage.
+const (
+	ResourceKindMCPClientConfiguration = "AI_ESTATE_RESOURCE_KIND_MCP_CLIENT_CONFIGURATION"
+	ResourceKindAgentSkill             = "AI_ESTATE_RESOURCE_KIND_AGENT_SKILL"
+)
+
 // CollectorIdentity describes the reporting collector. The gateway overrides
 // ReportedPrincipalID with the authenticated CLI token's user; a collector
 // cannot assert evidence on behalf of someone else without explicit delegation.
@@ -87,6 +96,18 @@ type ResourceAssertion struct {
 	CredentialKeyHint string `json:"credentialKeyHint,omitempty"`
 	ControlState      string `json:"controlState"`
 	ObservedAt        string `json:"observedAt"`
+
+	// Skill fields, populated only for ResourceKindAgentSkill assertions. They
+	// are additive and omitempty so an older gateway reading this wire shape
+	// keeps working, and a skill assertion never has to borrow a field whose
+	// name means something else.
+	//
+	// There is no body field. A skill's contents never leave the device — see
+	// skills.go.
+	SkillDescription    string `json:"skillDescription,omitempty"`
+	ContentHash         string `json:"contentHash,omitempty"`
+	ReferencedFileCount int    `json:"referencedFileCount,omitempty"`
+	HasExecutable       bool   `json:"hasExecutable,omitempty"`
 }
 
 // DiscoveryReport is the unit the collector submits. It is idempotent on
@@ -198,6 +219,36 @@ func BuildReport(
 			continue
 		}
 
+		for _, skill := range result.Skills {
+			report.ResourceAssertions = append(report.ResourceAssertions, ResourceAssertion{
+				SourceScope: scopeKey,
+				// Same instance-level identity rule as MCP configuration: two
+				// employees running the same skill are two assertions. The
+				// deduplicated logical skill is derivable from ContentHash, so
+				// both units of accounting remain available without collapsing
+				// per-person attribution here.
+				SourceAssertionID: fmt.Sprintf("%s|%s", scopeKey, skill.SkillName),
+				ProviderNamespace: result.ClientFamily,
+				ResourceKind:      ResourceKindAgentSkill,
+				ServerName:        skill.SkillName,
+				// A skill is loaded from local disk by the agent itself. It has
+				// no transport and no endpoint, and saying "unknown" would
+				// imply a network path we failed to classify.
+				Transport:           TransportStdio,
+				CredentialClass:     WireCredentialNone,
+				SkillDescription:    skill.Description,
+				ContentHash:         skill.ContentHash,
+				ReferencedFileCount: skill.ReferencedFileCount,
+				HasExecutable:       skill.HasExecutable,
+				// A skill found on disk is unmediated by construction: nothing
+				// in its load path traverses Telara. ApplyManagedEndpoints
+				// cannot upgrade it — it skips stdio assertions — and that is
+				// correct rather than a gap.
+				ControlState: WireControlDiscoveredUnmediated,
+				ObservedAt:   observedAt,
+			})
+		}
+
 		for _, server := range result.Servers {
 			report.ResourceAssertions = append(report.ResourceAssertions, ResourceAssertion{
 				SourceScope: scopeKey,
@@ -206,7 +257,7 @@ func BuildReport(
 				// of the key rather than the server name alone.
 				SourceAssertionID: fmt.Sprintf("%s|%s", scopeKey, server.ServerName),
 				ProviderNamespace: result.ClientFamily,
-				ResourceKind:      "AI_ESTATE_RESOURCE_KIND_MCP_CLIENT_CONFIGURATION",
+				ResourceKind:      ResourceKindMCPClientConfiguration,
 				ServerName:        server.ServerName,
 				Transport:         server.Transport,
 				EndpointHost:      server.EndpointHost,

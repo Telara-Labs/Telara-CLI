@@ -150,6 +150,12 @@ func userPathClass(rel string) string {
 	switch {
 	case rel == ".claude.json", rel == ".claude/settings.json":
 		return "user_global:claude_code"
+	case rel == ".claude/skills":
+		// The user's own skills directory. Without this it fell through to the
+		// absolute-path branch and was labelled managed_system, which asserts an
+		// admin-deployed path — the opposite of a personally installed skill,
+		// and precisely the distinction the shadow-AI view depends on.
+		return "user_global:claude_code_skills"
 	case rel == ".cursor/mcp.json":
 		return "user_global:cursor"
 	case rel == ".codex/config.toml":
@@ -178,6 +184,10 @@ func isProjectPath(path string) bool {
 		"/.vscode/mcp.json",
 		"/.windsurf/mcp_config.json",
 		"/.amazonq/mcp.json",
+		// Repo-local skills. A skill committed to a repository reaches every
+		// engineer who checks it out, so misreading it as managed_system would
+		// hide the widest-blast-radius case there is.
+		"/.claude/skills",
 	}
 	for _, suffix := range projectSuffixes {
 		if strings.HasSuffix(path, suffix) {

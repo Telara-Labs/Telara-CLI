@@ -148,10 +148,10 @@ func TestBuildReportMixedScanCoverageHonesty(t *testing.T) {
 		byScope[s.SourceScope] = s
 	}
 	wantStatuses := map[string]string{
-		"cursor:global":  WireCollectionComplete,
-		"claude:global":  WireCollectionFailed,
-		"gemini:global":  WireCollectionComplete, // FileAbsent is COMPLETE
-		"vscode:global":  WireCollectionPartial,
+		"cursor:global": WireCollectionComplete,
+		"claude:global": WireCollectionFailed,
+		"gemini:global": WireCollectionComplete, // FileAbsent is COMPLETE
+		"vscode:global": WireCollectionPartial,
 	}
 	for scope, want := range wantStatuses {
 		got, ok := byScope[scope]

@@ -98,7 +98,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	startedAt := time.Now().UTC()
-	results := discovery.ScanAll()
+	// MCP configuration and agent skills are two asset classes on the same
+	// machine. Skills scan their own scopes (see ScopeGlobalSkills), so the
+	// results concatenate without either class shadowing the other's coverage.
+	results := append(discovery.ScanAll(), discovery.ScanSkills()...)
 	completedAt := time.Now().UTC()
 
 	report := discovery.BuildReport(
