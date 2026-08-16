@@ -1,0 +1,33 @@
+{
+  "$schema": "https://cursor.com/schemas/cursor-plugin/plugin.json",
+  "name": "telara-connect",
+  "displayName": "Telara",
+  "version": "0.1.0",
+  "minClientVersions": {
+    "cursor": "3.13.0"
+  },
+  "description": "Connect to your company's approved systems through Telara with employee OAuth.",
+  "author": {
+    "name": "Telara",
+    "email": "support@telara.dev"
+  },
+  "publisher": "Telara",
+  "homepage": "https://www.telara.dev",
+  "repository": "https://github.com/Telara-Labs/Telara-CLI",
+  "license": "Apache-2.0",
+  "logo": "assets/telara-connector-512.png",
+  "keywords": [
+    "telara",
+    "mcp",
+    "enterprise",
+    "governance",
+    "oauth"
+  ],
+  "category": "integrations",
+  "tags": [
+    "mcp",
+    "enterprise-search",
+    "oauth"
+  ],
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "telara-plugins",
+  "owner": {
+    "name": "Telara",
+    "email": "support@telara.dev"
+  },
+  "metadata": {
+    "description": "Official Telara plugins for governed access to connected company systems."
+  },
+  "plugins": [
+    {
+      "name": "telara-connect",
+      "source": "plugins/telara-connect",
+      "description": "Connect Cursor to Telara with employee OAuth. No API key, MCP URL, or tenant configuration."
+    }
+  ]
+}
