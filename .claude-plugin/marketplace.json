@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.json",
+  "name": "telara",
+  "owner": {
+    "name": "Telara",
+    "url": "https://www.telara.dev"
+  },
+  "metadata": {
+    "description": "Official Telara connectors for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "telara-connect",
+      "source": "./plugins/telara-connect",
+      "description": "Connect Claude Code to Telara through OAuth. No pasted MCP URL or Telara API key."
+    }
+  ]
+}

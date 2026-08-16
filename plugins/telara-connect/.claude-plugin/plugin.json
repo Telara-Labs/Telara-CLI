@@ -1,0 +1,9 @@
+{
+  "name": "telara-connect",
+  "version": "0.1.0",
+  "author": {
+    "name": "Telara"
+  },
+  "description": "Connect Claude Code to Telara with a browser-led OAuth flow. No MCP configuration or pasted Telara key is required.",
+  "mcpServers": "./.mcp.json"
+}

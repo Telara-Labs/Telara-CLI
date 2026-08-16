@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "telara": {
+      "type": "http",
+      "url": "https://api.telara.dev/v1/mcp"
+    }
+  }
+}
