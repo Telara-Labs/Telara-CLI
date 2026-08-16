@@ -42,6 +42,7 @@ Configuration is applied in three layers:
 
 Get started:
   telara login                     Sign in (auto-connects your tools)
+  telara install                   Connect detected AI clients to Telara
   telara config global <name>      Change your global configuration
   telara config project <name>     Set a project override for this directory
   telara config                    See what's configured at each layer

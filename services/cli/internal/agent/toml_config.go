@@ -20,8 +20,10 @@ func readTOMLConfig(path string) (map[string]interface{}, error) {
 	}
 	var out map[string]interface{}
 	if err := toml.Unmarshal(data, &out); err != nil {
-		// Corrupted file — start fresh rather than propagating a parse error.
-		return make(map[string]interface{}), nil
+		// See readJSONConfig: returning an empty map here would have the
+		// caller rename a config containing only our entry over the user's
+		// ~/.codex/config.toml.
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return out, nil
 }
@@ -35,6 +37,9 @@ func writeTOMLConfig(path string, cfg map[string]interface{}) error {
 	data, err := toml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := backupExisting(path); err != nil {
+		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {

@@ -19,10 +19,34 @@ func readJSONConfig(path string) (map[string]interface{}, error) {
 	}
 	var out map[string]interface{}
 	if err := json.Unmarshal(data, &out); err != nil {
-		// Corrupted file — start fresh rather than propagating a parse error.
-		return make(map[string]interface{}), nil
+		// Never "start fresh" here. The caller's next move is to marshal what
+		// we return and rename it over this file, so swallowing a parse error
+		// silently replaces the user's config with one containing only our
+		// entry. That is not a corrupt-file edge case: .vscode/mcp.json
+		// documents comment support and will not round-trip through
+		// encoding/json, and ~/.claude.json is not an MCP file at all — it
+		// carries Claude Code's whole project history. Refusing costs one
+		// unconfigured client; the alternative costs the file.
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return out, nil
+}
+
+// backupExisting copies path to path+".bak" before a caller replaces it, so a
+// bad write is recoverable. Absent files need no backup, and a failure to back
+// up is fatal to the write — proceeding anyway would defeat the point.
+func backupExisting(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s for backup: %w", path, err)
+	}
+	if err := os.WriteFile(path+".bak", data, 0600); err != nil {
+		return fmt.Errorf("write backup %s.bak: %w", path, err)
+	}
+	return nil
 }
 
 // writeJSONConfig marshals cfg and writes it to path atomically via a temp file.
@@ -34,6 +58,9 @@ func writeJSONConfig(path string, cfg map[string]interface{}) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := backupExisting(path); err != nil {
+		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {

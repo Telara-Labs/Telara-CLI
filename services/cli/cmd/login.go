@@ -14,8 +14,8 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
-	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 )
 
 var loginToken string
@@ -201,9 +201,9 @@ func printLoginBanner(email, orgName string) {
 // autoWireTools detects installed AI tools and writes the tenant-scoped default
 // MCP config to each one. Called on first login when no snapshot exists.
 //
-// If the backend provides a master key (auto-provisioned at tenant creation),
-// we use it directly — no GenerateKey or ListDeployments calls needed. The
-// master key gives access to all tenant-scoped data sources and policies.
+// It explicitly requests a user-bound tenant master key first; the read-only
+// config resolver never mints or returns credentials. A deployed assigned
+// configuration remains a compatibility fallback for older tenants.
 //
 // If the tools are already wired with a key that belongs to the current tenant
 // and force is false, the call is a no-op — we never mint a new key just
@@ -242,55 +242,10 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		}
 	}
 
-	resolved, err := client.ResolveConfigs(context.Background())
+	rawKey, mcpURL, configName, err := onboardingCredential(context.Background(), client, toolKeyName(detected[0].Name()))
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not get a Telara credential to connect your tools: %v\n", err)
 		return
-	}
-
-	var rawKey, mcpURL, configName string
-
-	if resolved.MasterKey != "" {
-		// Master key path: use the pre-provisioned tenant key directly.
-		rawKey = resolved.MasterKey
-		mcpURL = resolved.MCPURL
-		configName = "Master"
-	} else {
-		// Fallback: pick a config and generate a key (existing flow).
-		candidates := append(resolved.Managed, resolved.Available...)
-		if len(candidates) == 0 {
-			return
-		}
-		cfg := candidates[0]
-		configName = cfg.Name
-
-		deps, err := client.ListDeployments(context.Background(), cfg.ID)
-		if err != nil {
-			return
-		}
-		if len(deps.Deployments) == 0 {
-			return
-		}
-		var dep *api.Deployment
-		for i := range deps.Deployments {
-			if deps.Deployments[i].ScopeType == "tenant" {
-				dep = &deps.Deployments[i]
-				break
-			}
-		}
-		if dep == nil {
-			dep = &deps.Deployments[0]
-		}
-
-		keyResp, err := client.GenerateKey(context.Background(), cfg.ID, api.GenerateKeyRequest{
-			Name:      toolKeyName(detected[0].Name()),
-			ScopeType: dep.ScopeType,
-			ScopeID:   dep.ScopeID,
-		})
-		if err != nil {
-			return
-		}
-		rawKey = keyResp.RawKey
-		mcpURL = keyResp.MCPURL
 	}
 
 	if mcpURL == "" {
@@ -301,6 +256,10 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 	for _, w := range detected {
 		entry := newMCPEntryForWriter(mcpURL, rawKey, w)
 		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
+			// Say so. A writer now refuses rather than overwriting a config it
+			// cannot parse, so a skip here means a tool the user believes is
+			// connected is not — and silence would be the only clue.
+			fmt.Fprintf(os.Stderr, "Warning: could not configure %s: %v\n", w.Name(), err)
 			continue
 		}
 		if pw, ok := w.(agent.PermissionWriter); ok {

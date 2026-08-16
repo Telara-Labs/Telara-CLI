@@ -1,6 +1,9 @@
 package api
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Deployment describes a scoped deployment of an MCP configuration.
 type Deployment struct {
@@ -56,8 +59,20 @@ type ResolveResponse struct {
 	Managed   []MCPConfig `json:"managed"`
 	User      []MCPConfig `json:"user"`
 	Available []MCPConfig `json:"available"`
-	MasterKey string      `json:"master_key,omitempty"` // Pre-provisioned tenant master key (if available)
-	MCPURL    string      `json:"mcp_url,omitempty"`    // MCP endpoint URL for master key
+	// Deprecated compatibility fields. The server intentionally no longer
+	// populates these on the read-only resolve endpoint; callers must migrate
+	// to IssueMasterKey. They remain until every client has switched so a
+	// partial rollout does not break the CLI build.
+	MasterKey string `json:"master_key,omitempty"`
+	MCPURL    string `json:"mcp_url,omitempty"`
+}
+
+// MasterKeyResponse is returned once by the explicit key-issuance action.
+// ResolveConfigs is deliberately read-only; callers must use IssueMasterKey
+// when a local client needs a fresh, user-bound credential.
+type MasterKeyResponse struct {
+	MasterKey string `json:"master_key"`
+	MCPURL    string `json:"mcp_url"`
 }
 
 // ListConfigs fetches all MCP configurations accessible to the authenticated user.
@@ -84,6 +99,22 @@ func (c *Client) ResolveConfigs(ctx context.Context) (*ResolveResponse, error) {
 	var resp ResolveResponse
 	if err := c.do(ctx, "GET", "/v1/cli/configs/resolve", nil, &resp); err != nil {
 		return nil, err
+	}
+	return &resp, nil
+}
+
+// IssueMasterKey mints one user-bound key for the tenant master MCP
+// configuration. This is intentionally a POST: key issuance must never occur
+// as a side effect of polling the read-only configuration endpoint.
+func (c *Client) IssueMasterKey(ctx context.Context, name string) (*MasterKeyResponse, error) {
+	var resp MasterKeyResponse
+	if err := c.Post(ctx, "/v1/cli/configs/master/key", struct {
+		Name string `json:"name,omitempty"`
+	}{Name: name}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.MasterKey == "" {
+		return nil, fmt.Errorf("master key response did not include a key")
 	}
 	return &resp, nil
 }
