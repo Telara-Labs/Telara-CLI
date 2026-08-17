@@ -8,11 +8,10 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.11.1
-	gitlab.com/telara-labs/telara-utilities v0.0.0-20260815133524-c1562199a328
-	gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817144822-9c16d8a69702
+	gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc
+	gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817145559-8ff309aeeb21
 	golang.org/x/crypto v0.49.0
 	golang.org/x/term v0.41.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -26,4 +25,5 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

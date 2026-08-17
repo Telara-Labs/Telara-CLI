@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
+	catalog "gitlab.com/telara-labs/telara-utilities/go/integrations/catalog"
 )
 
 const (
@@ -187,7 +188,7 @@ func scanCatalogSource(src catalogFileSource) ConfigScanResult {
 // adding a catalog `fields:`/`value_map:` row. The catalog only tells this
 // engine WHERE to look (items_path, id_field) — never how to classify what
 // it finds there.
-func walkResource(res rawAIEstateResource, top map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
+func walkResource(res catalog.AIEstateResourceSpec, top map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
 	if res.ItemsPath == "" {
 		get := pseudoFieldResolver(top, "", src, path)
 		id, ok := resolveIdentity(res, get)
@@ -224,6 +225,15 @@ func walkResource(res rawAIEstateResource, top map[string]interface{}, src catal
 		}
 		rec := engineRecord{Kind: res.Kind, ID: id, Fields: extractFields(res, entry, get)}
 		if res.Kind == "mcp_server_deployment" {
+			// rec.Fields (this resource's catalog `fields:`/`value_map:`,
+			// e.g. transport: {"": stdio}) IS computed above — it is not
+			// silently dropped at parse time — but it deliberately does NOT
+			// feed rec.Server below. discoverServer independently derives
+			// transport/credential/endpoint/command from the same raw entry
+			// via privacy.go, which is the one true source for anything
+			// privacy-sensitive. rec.Fields stays on the record for
+			// introspection (see TestOneConfigFileYieldsClientConfigAndServers)
+			// but is not itself wire-facing.
 			server := discoverServer(key, entry)
 			rec.Server = &server
 		}
@@ -260,7 +270,7 @@ func pseudoFieldResolver(item map[string]interface{}, key string, src catalogFil
 // one), and report failure — never inventing an identity — when nothing
 // resolves. Per §7 property 3, the caller must count every such failure
 // against coverage rather than dropping it silently.
-func resolveIdentity(res rawAIEstateResource, get func(field string) string) (id string, resolved bool) {
+func resolveIdentity(res catalog.AIEstateResourceSpec, get func(field string) string) (id string, resolved bool) {
 	if res.IDField != "" {
 		if v := get(res.IDField); v != "" {
 			return v, true
@@ -280,7 +290,7 @@ func resolveIdentity(res rawAIEstateResource, get func(field string) string) (id
 // AIEstateValueMapDefault-less here since none of today's file sources need
 // a default — see catalog.go's value_map handling for the two kinds that
 // exercise this).
-func extractFields(res rawAIEstateResource, item map[string]interface{}, get func(string) string) map[string]string {
+func extractFields(res catalog.AIEstateResourceSpec, item map[string]interface{}, get func(string) string) map[string]string {
 	if len(res.Fields) == 0 {
 		return nil
 	}

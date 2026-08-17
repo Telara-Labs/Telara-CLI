@@ -41,10 +41,10 @@ github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
-gitlab.com/telara-labs/telara-utilities v0.0.0-20260815133524-c1562199a328 h1:O+Ten6djIXJFS0MgtwFBtHoIS3qA2+wkKTjmDHN7KiI=
-gitlab.com/telara-labs/telara-utilities v0.0.0-20260815133524-c1562199a328/go.mod h1:mxN0CbGmm/mhEnX3qZTWOQyfJbv5oAnKeVO8uprh7u0=
-gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817144822-9c16d8a69702 h1:ypMtgZFhcXxoHDTNa6bh2F+Y7FUoZrkaoqtY7+QxEek=
-gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817144822-9c16d8a69702/go.mod h1:Xe9Ttvejq9C3/Akr/CkO7YHyz+QMfLmzZ4+jF+9DFIo=
+gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc h1:DVYTV5pzyLbfG43KtyKQcSumHbmg8iJkeC5ix0Zdlpw=
+gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc/go.mod h1:ycUE1Xxd2Dz0HKk2qxNQPgifbbXaMz8aK4DbOvMgPmQ=
+gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817145559-8ff309aeeb21 h1:6Dd2qfXztNvaDaqQO5lZiC5yL3aKhynuwhjKpUqdXmM=
+gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817145559-8ff309aeeb21/go.mod h1:Xe9Ttvejq9C3/Akr/CkO7YHyz+QMfLmzZ4+jF+9DFIo=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
