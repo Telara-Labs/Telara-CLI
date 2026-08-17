@@ -95,7 +95,7 @@ func permissionRule(serverName string) string {
 }
 
 // WritePermissions adds an auto-approve rule for all tools from the named MCP server.
-func (w *claudeCodeWriter) WritePermissions(scope Scope, serverName string) error {
+func (w *claudeCodeWriter) WritePermissions(scope Scope, serverName string, _ []string) error {
 	path, err := w.settingsPath(scope)
 	if err != nil {
 		return err

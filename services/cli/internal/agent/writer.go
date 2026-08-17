@@ -23,30 +23,44 @@ type MCPEntry struct {
 // to manage tool auto-approval permissions. Writers that support it (e.g. Claude Code)
 // can auto-approve MCP tools so users aren't double-prompted.
 type PermissionWriter interface {
-	WritePermissions(scope Scope, serverName string) error
+	WritePermissions(scope Scope, serverName string, tools []string) error
 	RemovePermissions(scope Scope, serverName string) error
 }
 
-// PlatformToolNames returns the static tool names that are always available
-// from the Telara MCP server. Used by clients that need explicit tool lists
-// for auto-approval (Cursor, Windsurf).
+// PlatformToolNames is the OFFLINE FALLBACK for clients that auto-approve by
+// explicit tool name (Cursor, Windsurf, Codex). The live list comes from the
+// server via FetchToolNames; this is used only when it cannot be reached.
+//
+// It is a copy of a list the gateway owns, so it is pinned by
+// TestPlatformToolNamesMatchesGatewaySurface — if that test fails, the gateway
+// changed and this list must follow.
 func PlatformToolNames() []string {
 	return []string{
+		// Knowledge
 		"telara_knowledge_search",
 		"telara_knowledge_traverse",
 		"telara_knowledge_get_context",
 		"telara_knowledge_impact",
+		"telara_knowledge_annotate",
+		"telara_knowledge_link",
+		"telara_knowledge_timeline",
+		"telara_code_call_hierarchy",
+		"telara_browser_extract",
+		// Archive — archive_batch_read was folded into archive_read(file_paths).
 		"telara_archive_read",
 		"telara_archive_ls",
-		"telara_archive_batch_read",
 		"telara_archive_search",
+		// Tasks
 		"telara_task_list",
 		"telara_task_create",
 		"telara_task_resume",
 		"telara_task_checkpoint",
 		"telara_task_complete",
 		"telara_task_pause",
-		"telara_run_action",
+		// Action execution and on-demand discovery
+		"telara_execute_action",
+		"telara_tool_search",
+		"telara_tool_describe",
 	}
 }
 

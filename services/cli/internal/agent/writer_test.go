@@ -150,7 +150,7 @@ func TestClaudeCode_Global_WriteRemovePermissions(t *testing.T) {
 		t.Skip("claude-code writer does not implement PermissionWriter")
 	}
 
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestClaudeCode_Global_WriteRemovePermissions(t *testing.T) {
 	}
 
 	// Idempotent — a second call must not duplicate.
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions (2nd): %v", err)
 	}
 	if n := countRuleOccurrences(); n != 1 {
@@ -203,7 +203,7 @@ func TestClaudeCode_Project_WritePermissions(t *testing.T) {
 	}
 
 	pw := w.(PermissionWriter)
-	if err := pw.WritePermissions(ScopeProject, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeProject, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -311,7 +311,7 @@ func TestCursor_WriteRemovePermissions(t *testing.T) {
 		t.Skip("cursor writer does not implement PermissionWriter")
 	}
 
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -445,7 +445,7 @@ func TestWindsurf_WriteRemovePermissions(t *testing.T) {
 		t.Skip("windsurf writer does not implement PermissionWriter")
 	}
 
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -598,7 +598,7 @@ func TestClaudeCode_ConfigAndSettingsAreSeparateFiles(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 	pw := w.(PermissionWriter)
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -788,7 +788,7 @@ func TestCodex_WriteRemovePermissions(t *testing.T) {
 		t.Skip("codex writer does not implement PermissionWriter")
 	}
 
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 
@@ -983,7 +983,7 @@ func TestGemini_WriteRemovePermissions(t *testing.T) {
 		t.Skip("gemini writer does not implement PermissionWriter")
 	}
 
-	if err := pw.WritePermissions(ScopeGlobal, "telara"); err != nil {
+	if err := pw.WritePermissions(ScopeGlobal, "telara", nil); err != nil {
 		t.Fatalf("WritePermissions: %v", err)
 	}
 

@@ -153,6 +153,8 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 	if err != nil {
 		return nil, fmt.Errorf("could not get a Telara credential: %w", err)
 	}
+
+	toolNames := agent.ResolveToolNames(ctx, mcpURL, rawKey)
 	if mcpURL == "" {
 		mcpURL = defaultMCPURL()
 	}
@@ -167,7 +169,7 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 			continue
 		}
 		if permissions, ok := writer.(agent.PermissionWriter); ok {
-			if err := permissions.WritePermissions(scope, "telara"); err != nil {
+			if err := permissions.WritePermissions(scope, "telara", toolNames); err != nil {
 				results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: fmt.Sprintf("MCP entry written, but permissions failed: %v", err)})
 				failed = true
 				continue

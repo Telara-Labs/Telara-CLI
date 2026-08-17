@@ -252,6 +252,8 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		mcpURL = defaultMCPURL()
 	}
 
+	toolNames := agent.ResolveToolNames(context.Background(), mcpURL, rawKey)
+
 	var wired []string
 	for _, w := range detected {
 		entry := newMCPEntryForWriter(mcpURL, rawKey, w)
@@ -263,7 +265,7 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 			continue
 		}
 		if pw, ok := w.(agent.PermissionWriter); ok {
-			_ = pw.WritePermissions(agent.ScopeGlobal, "telara")
+			_ = pw.WritePermissions(agent.ScopeGlobal, "telara", toolNames)
 		}
 		wired = append(wired, w.Name())
 	}
@@ -309,7 +311,9 @@ func ensureMCPConfig(client *api.Client, tenantID string) {
 				return
 			}
 			if pw, ok := w.(agent.PermissionWriter); ok {
-				_ = pw.WritePermissions(agent.ScopeGlobal, "telara")
+				// Repairing an existing entry: no fresh credential is in scope
+				// here, so the writer falls back to the built-in names.
+				_ = pw.WritePermissions(agent.ScopeGlobal, "telara", nil)
 			}
 			continue
 		}

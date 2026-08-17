@@ -70,12 +70,14 @@ func (w *cursorWriter) Remove(scope Scope, serverName string) error {
 
 // WritePermissions sets the autoApprove field on the server entry with all
 // platform tool names.
-func (w *cursorWriter) WritePermissions(scope Scope, serverName string) error {
+func (w *cursorWriter) WritePermissions(scope Scope, serverName string, tools []string) error {
 	path, err := w.configPath(scope)
 	if err != nil {
 		return err
 	}
-	tools := PlatformToolNames()
+	if len(tools) == 0 {
+		tools = PlatformToolNames()
+	}
 	toolList := make([]interface{}, len(tools))
 	for i, t := range tools {
 		toolList[i] = t

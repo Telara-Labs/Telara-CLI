@@ -115,6 +115,11 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 		mcpURL = defaultMCPURL()
 	}
 
+	// Ask the server what it actually serves. Cursor, Windsurf and Codex
+	// auto-approve by explicit tool name, so a list baked into the CLI silently
+	// re-prompts for anything the gateway gained since this binary was built.
+	toolNames := agent.ResolveToolNames(context.Background(), mcpURL, keyResp.RawKey)
+
 	var wired []string
 	for _, w := range writers {
 		entry := newMCPEntryForWriter(mcpURL, keyResp.RawKey, w)
@@ -123,7 +128,7 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 			continue
 		}
 		if pw, ok := w.(agent.PermissionWriter); ok {
-			_ = pw.WritePermissions(scope, "telara")
+			_ = pw.WritePermissions(scope, "telara", toolNames)
 		}
 		wired = append(wired, w.Name())
 	}

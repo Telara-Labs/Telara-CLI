@@ -69,7 +69,7 @@ func (w *geminiWriter) Remove(scope Scope, serverName string) error {
 }
 
 // WritePermissions sets trust=true on the server entry for auto-approval.
-func (w *geminiWriter) WritePermissions(scope Scope, serverName string) error {
+func (w *geminiWriter) WritePermissions(scope Scope, serverName string, _ []string) error {
 	path, err := w.configPath(scope)
 	if err != nil {
 		return err
