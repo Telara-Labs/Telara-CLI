@@ -13,6 +13,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 	catalog "gitlab.com/telara-labs/telara-utilities/go/integrations/catalog"
+	yaml "gopkg.in/yaml.v3"
 )
 
 const (
@@ -41,6 +42,7 @@ type configFormat string
 const (
 	configJSON configFormat = "json"
 	configTOML configFormat = "toml"
+	configYAML configFormat = "yaml"
 )
 
 // engineRecord is one resource emitted by the discover:file engine loop
@@ -202,13 +204,40 @@ func walkResource(res catalog.AIEstateResourceSpec, top map[string]interface{}, 
 		}}, 0
 	}
 
-	items, ok := mapValue(top, res.ItemsPath)
-	if !ok {
+	// items_path is a literal, single-level top-level key lookup (no
+	// dot-path traversal — see sourcegraph_cody.yaml's "amp.mcpServers",
+	// which is one literal key containing a dot, not a nested path).
+	raw, present := top[res.ItemsPath]
+	if !present || raw == nil {
 		// Nothing under this path in THIS file — not an error, zero records
 		// from this resource (e.g. a config with no mcpServers key at all).
 		return nil, 0
 	}
 
+	switch typed := raw.(type) {
+	case map[string]interface{}:
+		// Object shape, keyed by the record's own identity — cursor.yaml,
+		// claude_code.yaml, sourcegraph_cody.yaml: `mcpServers: {name: {...}}`.
+		return walkResourceObjectItems(res, typed, src, path)
+	case []interface{}:
+		// List shape — each element already carries its own identity field
+		// (continue_dev.yaml: `mcpServers: [{name: ..., command: ...}, ...]`,
+		// verified at docs.continue.dev/customize/deep-dives/mcp; config.yaml
+		// there is an ARRAY of server objects, not a map keyed by name, unlike
+		// every file-mode vendor catalogued before it). Mirrors the
+		// telara-knowledge substrate engine's resourceItemsAt, which has
+		// supported both shapes for discover:tool sources since TENG-2218
+		// (catalog_resources.go: "items_path may address either a JSON array
+		// ... or a JSON object keyed by the record's own identity").
+		return walkResourceListItems(res, typed, src, path)
+	default:
+		return nil, 0
+	}
+}
+
+// walkResourceObjectItems is the object-shaped items_path case, unchanged
+// from before list support was added.
+func walkResourceObjectItems(res catalog.AIEstateResourceSpec, items map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
 	keys := make([]string, 0, len(items))
 	for k := range items {
 		keys = append(keys, k)
@@ -235,6 +264,42 @@ func walkResource(res catalog.AIEstateResourceSpec, top map[string]interface{}, 
 			// introspection (see TestOneConfigFileYieldsClientConfigAndServers)
 			// but is not itself wire-facing.
 			server := discoverServer(key, entry)
+			rec.Server = &server
+		}
+		records = append(records, rec)
+	}
+	return records, dropped
+}
+
+// walkResourceListItems is the list-shaped items_path case: each element is
+// its own record and, unlike the object case, has no synthetic `_key` — its
+// identity comes directly from a real field the catalog names via id_field
+// (continue_dev.yaml uses `name`). Order is preserved as declared in the
+// source file rather than sorted, since there is no key to sort by and the
+// file's own order is as stable as anything else available.
+func walkResourceListItems(res catalog.AIEstateResourceSpec, items []interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
+	for _, raw := range items {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			dropped++
+			continue
+		}
+		// No map key exists for this shape, so pseudoFieldResolver's "_key"
+		// pseudo-field resolves empty here — id_field/id_fallback_fields must
+		// name a real field on the entry itself (e.g. "name").
+		get := pseudoFieldResolver(entry, "", src, path)
+		id, ok := resolveIdentity(res, get)
+		if !ok {
+			dropped++
+			continue
+		}
+		rec := engineRecord{Kind: res.Kind, ID: id, Fields: extractFields(res, entry, get)}
+		if res.Kind == "mcp_server_deployment" {
+			// See walkResourceObjectItems: privacy.go's discoverServer is the
+			// one true source for anything privacy-sensitive, never a catalog
+			// field. The resolved identity (the entry's own "name") stands in
+			// for the object-shape's map key.
+			server := discoverServer(id, entry)
 			rec.Server = &server
 		}
 		records = append(records, rec)
@@ -373,8 +438,12 @@ func resolveConfigPath(raw string) string {
 // replacing the old per-client format table: every file source's format is
 // fully determined by its own path, never by which vendor declared it.
 func formatFor(path string) configFormat {
-	if strings.HasSuffix(strings.ToLower(path), ".toml") {
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".toml") {
 		return configTOML
+	}
+	if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
+		return configYAML
 	}
 	return configJSON
 }
@@ -413,6 +482,19 @@ func parseConfig(data []byte, format configFormat) (map[string]interface{}, erro
 		}
 	case configTOML:
 		if err := toml.Unmarshal(data, &top); err != nil {
+			return nil, err
+		}
+	case configYAML:
+		// yaml.v3 decodes a mapping node into map[string]interface{} (not the
+		// map[interface{}]interface{} some other YAML libraries produce) as
+		// long as every key in that mapping is itself a plain string — see
+		// gopkg.in/yaml.v3's decode.go mapping(): a reflect.Interface target
+		// picks stringMapType when isStringMap(n), generalMapType otherwise.
+		// Every real MCP config (mcpServers: {name: {...}}) satisfies that,
+		// so this matches parseConfig's JSON/TOML branches without a second
+		// conversion pass. TestContinueDevYAMLDecodesAsStringKeyedMaps pins
+		// this shape with a real fixture.
+		if err := yaml.Unmarshal(data, &top); err != nil {
 			return nil, err
 		}
 	default:

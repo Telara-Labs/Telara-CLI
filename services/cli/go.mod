@@ -9,9 +9,10 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.11.1
 	gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc
-	gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817180333-cb0256abe2cd
+	gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817184427-3bc34b8daf06
 	golang.org/x/crypto v0.49.0
 	golang.org/x/term v0.41.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,5 +30,4 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

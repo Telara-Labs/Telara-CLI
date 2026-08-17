@@ -347,6 +347,116 @@ func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
 	})
 }
 
+// TestContinueDevYAMLConfigExtractsRealistically is TENG-2225 Batch E's
+// follow-up test for continue_dev.yaml, and it is pinning down two separate
+// facts at once, both real regressions this codebase has hit before:
+//
+//  1. parseConfig's new YAML branch decodes into map[string]interface{} for a
+//     REAL config shape end to end — through Scan() -> the real embedded
+//     catalog -> parseConfig -> walkResource -> mapValue()'s
+//     raw.(map[string]interface{}) assertion — not a standalone
+//     yaml.Unmarshal call. yaml.v3 only picks stringMapType (rather than the
+//     map[interface{}]interface{} some other YAML libraries always use) when
+//     every key in a mapping node is itself a string; a fixture with a
+//     mapping value nested under a list element (exactly what mcpServers'
+//     list-of-objects shape requires) is what actually exercises that path.
+//     A silent map[interface{}]interface{} regression here would parse
+//     clean and extract zero servers — "well-formed is not working."
+//  2. continue_dev.yaml's ai_estate block matches Continue's REAL documented
+//     config.yaml shape (docs.continue.dev/customize/deep-dives/mcp,
+//     verified 2026-08-17): mcpServers is a LIST of {name, command/args or
+//     url+type, ...} objects, unlike every other file-mode vendor in this
+//     catalog (cursor/claude-code/sourcegraph_cody all use a name-keyed MAP).
+//     Authoring the block against the wrong (map) shape — the shape every
+//     precedent in this file uses — would have parsed fine and silently
+//     extracted nothing; walkResourceListItems (scanner.go) exists because
+//     of that gap, not just the YAML one.
+func TestContinueDevYAMLConfigExtractsRealistically(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Shape straight from docs.continue.dev: a local stdio server (command +
+	// args, no "type" — must default to stdio via the value_map) and a
+	// remote sse server (url + explicit "type"), covering both entry shapes
+	// config.yaml documents.
+	fixture := "mcpServers:\n" +
+		"  - name: SQLite\n" +
+		"    command: npx\n" +
+		"    args:\n" +
+		"      - \"@modelcontextprotocol/server-sqlite\"\n" +
+		"      - \"/path/to/database.db\"\n" +
+		"  - name: Remote Docs\n" +
+		"    type: sse\n" +
+		"    url: https://example.com/mcp\n"
+	writeFixture(t, filepath.Join(home, ".continue", "config.yaml"), fixture)
+
+	result := Scan("continue_dev", ScopeGlobal)
+	requireStatus(t, result, ScanOK)
+
+	if len(result.Servers) != 2 {
+		t.Fatalf("expected 2 servers, got %d: %+v", len(result.Servers), result.Servers)
+	}
+	byName := map[string]DiscoveredServer{}
+	for _, s := range result.Servers {
+		byName[s.ServerName] = s
+	}
+
+	sqlite, ok := byName["SQLite"]
+	if !ok {
+		t.Fatalf("missing SQLite server, got: %+v", result.Servers)
+	}
+	if sqlite.Transport != TransportStdio {
+		t.Errorf("SQLite transport = %q, want %q (no explicit type — value_map default)", sqlite.Transport, TransportStdio)
+	}
+	// NormalizeCommandIdentity stops at the first safe package identity
+	// token (privacy.go), so the trailing db-path arg is intentionally not
+	// captured — mirrors the amp/playwright case in the test above.
+	if sqlite.CommandIdentity != "npx:@modelcontextprotocol/server-sqlite" {
+		t.Errorf("SQLite command identity = %q, want %q", sqlite.CommandIdentity, "npx:@modelcontextprotocol/server-sqlite")
+	}
+
+	docs, ok := byName["Remote Docs"]
+	if !ok {
+		t.Fatalf("missing Remote Docs server, got: %+v", result.Servers)
+	}
+	if docs.Transport != TransportSSE {
+		t.Errorf("Remote Docs transport = %q, want %q", docs.Transport, TransportSSE)
+	}
+	if docs.EndpointHost != "https://example.com" {
+		t.Errorf("Remote Docs endpoint host = %q, want %q", docs.EndpointHost, "https://example.com")
+	}
+
+	// mcp_client_configuration must also resolve alongside the two servers —
+	// the OTHER kind this same file read yields (schema doc §6a).
+	var sawClientConfig bool
+	for _, rec := range result.records {
+		if rec.Kind == "mcp_client_configuration" {
+			sawClientConfig = true
+			if rec.Fields["client"] != "continue_dev" {
+				t.Errorf("mcp_client_configuration client field = %q, want %q", rec.Fields["client"], "continue_dev")
+			}
+			if rec.Fields["scope"] != ScopeGlobal {
+				t.Errorf("mcp_client_configuration scope field = %q, want %q", rec.Fields["scope"], ScopeGlobal)
+			}
+		}
+	}
+	if !sawClientConfig {
+		t.Fatalf("expected an mcp_client_configuration record alongside the servers, got records: %+v", result.records)
+	}
+
+	// Negative: project scope is not a declared source for continue_dev (the
+	// task anchored specifically on the confirmed global config.yaml; a
+	// workspace-level config was never verified and must not silently exist).
+	t.Run("continue_dev project is not a declared source", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		result := Scan("continue_dev", ScopeProject)
+		if result.Status != ScanUnsupported {
+			t.Fatalf("expected ScanUnsupported for continue_dev/project (only global is catalogued), got %q", result.Status)
+		}
+	})
+}
+
 // TestOneConfigFileYieldsClientConfigAndServers proves the multi-kind case
 // the schema doc's §6a exists to demonstrate: one .claude.json read produces
 // ONE mcp_client_configuration record plus one mcp_server_deployment record

@@ -56,8 +56,8 @@ github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc h1:DVYTV5pzyLbfG43KtyKQcSumHbmg8iJkeC5ix0Zdlpw=
 gitlab.com/telara-labs/telara-utilities v0.0.0-20260816162300-3c00bc594efc/go.mod h1:ycUE1Xxd2Dz0HKk2qxNQPgifbbXaMz8aK4DbOvMgPmQ=
-gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817180333-cb0256abe2cd h1:HbuhJRpGackMm3iH5Ib23D6ylqQBerJRR8PgukrClIU=
-gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817180333-cb0256abe2cd/go.mod h1:Xe9Ttvejq9C3/Akr/CkO7YHyz+QMfLmzZ4+jF+9DFIo=
+gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817184427-3bc34b8daf06 h1:pivQ5F8S0q5Bw349o797UEMGmel0uILBZQkG3dWJ0KA=
+gitlab.com/telara-labs/telara-utilities/go/integrations v0.0.0-20260817184427-3bc34b8daf06/go.mod h1:Xe9Ttvejq9C3/Akr/CkO7YHyz+QMfLmzZ4+jF+9DFIo=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
