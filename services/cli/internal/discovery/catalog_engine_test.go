@@ -171,6 +171,182 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 	})
 }
 
+// TestTENG2225NewFileModeVendorsExtractRealistically proves the file-mode
+// ai_estate blocks TENG-2225 added to the real embedded catalog (batch 1:
+// cline.yaml, factory.yaml; batch 2: sourcegraph_cody.yaml/Amp) extract
+// correctly against a fixture shaped like that vendor's actual documented
+// config file — not merely well-formed YAML that happens to load. Driven
+// through Scan() -> fileSources() -> the real embedded production catalog,
+// exactly like TestParityWithHardcodedScanner above, just for client_id
+// strings that have no ClientXxx constant (Scan matches on the raw
+// client_id/scope strings the catalog declares, so none is needed).
+//
+// Sources, verified 2026-08-17:
+//   - Cline: https://docs.cline.bot/mcp/configuring-mcp-servers — CLI global
+//     config at ~/.cline/mcp.json, mcpServers object (command/args or
+//     url/type), same shape as cursor/windsurf/claude_code.
+//   - Factory: https://docs.factory.ai/cli/configuration/mcp — Droid CLI
+//     mcp.json at user (~/.factory/mcp.json) and project (.factory/mcp.json)
+//     scope, top-level mcpServers object with explicit "type": "stdio"/"http".
+//   - Amp (sourcegraph_cody.yaml): https://ampcode.com/manual — user settings
+//     at ~/.config/amp/settings.json(c), workspace settings at the nearest
+//     .amp/settings.json(c) searched upward from cwd. MCP servers live under
+//     the literal top-level key "amp.mcpServers" (a VS-Code-style dotted
+//     setting name, NOT a nested {amp:{mcpServers:{}}} object) — the catalog
+//     source's items_path is the literal string "amp.mcpServers", which
+//     exercises mapValue()'s exact-key lookup (no dot-path traversal) rather
+//     than the plain top-level "mcpServers" every other vendor here uses.
+func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
+	type tc struct {
+		name       string
+		client     string
+		scope      string
+		configPath func(home, cwd string) string
+		fixture    string
+		wantServer string
+		wantHost   string
+		wantCmd    string
+		wantScope  string
+	}
+
+	cases := []tc{
+		{
+			name:   "cline global",
+			client: "cline",
+			scope:  ScopeGlobal,
+			configPath: func(home, cwd string) string {
+				return filepath.Join(home, ".cline", "mcp.json")
+			},
+			// Shape straight from docs.cline.bot: mcpServers keyed by server
+			// name, stdio entries carry command/args.
+			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
+			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+		},
+		{
+			name:   "factory user level",
+			client: "factory",
+			scope:  ScopeGlobal,
+			configPath: func(home, cwd string) string {
+				return filepath.Join(home, ".factory", "mcp.json")
+			},
+			// Shape from docs.factory.ai's HTTP example: explicit "type": "http".
+			fixture:    `{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp","disabled":false}}}`,
+			wantServer: "linear", wantHost: "https://mcp.linear.app",
+		},
+		{
+			name:   "factory project level",
+			client: "factory",
+			scope:  ScopeProject,
+			configPath: func(home, cwd string) string {
+				return filepath.Join(cwd, ".factory", "mcp.json")
+			},
+			// Shape from docs.factory.ai's stdio example: explicit "type": "stdio".
+			fixture:    `{"mcpServers":{"my-server":{"type":"stdio","command":"npx","args":["-y","@some/mcp-server"],"disabledTools":["unused_tool"]}}}`,
+			wantServer: "my-server", wantCmd: "npx:-y:@some/mcp-server",
+		},
+		{
+			name:   "amp global (sourcegraph_cody.yaml)",
+			client: "amp",
+			scope:  ScopeGlobal,
+			configPath: func(home, cwd string) string {
+				return filepath.Join(home, ".config", "amp", "settings.json")
+			},
+			// Shape straight from ampcode.com/manual: a general VS-Code-style
+			// settings.json carrying other amp.* keys alongside the literal
+			// "amp.mcpServers" key; local server entries carry command/args,
+			// no "type" discriminator (verifies the value_map "": stdio
+			// default, not a literal type field).
+			fixture:    `{"amp.notifications.enabled":true,"amp.mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest","--headless"]}}}`,
+			// NormalizeCommandIdentity (privacy.go) stops at the first safe
+			// package identity token, so the trailing --headless flag (after
+			// the package arg) is intentionally not captured.
+			wantServer: "playwright", wantCmd: "npx:-y:@playwright/mcp@latest",
+		},
+		{
+			name:   "amp workspace (sourcegraph_cody.yaml)",
+			client: "amp",
+			scope:  ScopeProject,
+			configPath: func(home, cwd string) string {
+				return filepath.Join(cwd, ".amp", "settings.json")
+			},
+			// Shape from ampcode.com/manual's remote-server example: url +
+			// headers, again no "type" field.
+			fixture:    `{"amp.mcpServers":{"sourcegraph":{"url":"https://sourcegraph.example.com/.api/mcp/v1","headers":{"Authorization":"token xyz"}}}}`,
+			wantServer: "sourcegraph", wantHost: "https://sourcegraph.example.com",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			cwd := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Chdir(cwd)
+
+			path := c.configPath(home, cwd)
+			writeFixture(t, path, c.fixture)
+
+			result := Scan(c.client, c.scope)
+			requireStatus(t, result, ScanOK)
+			if len(result.Servers) != 1 {
+				t.Fatalf("expected 1 server, got %d: %+v", len(result.Servers), result.Servers)
+			}
+			server := result.Servers[0]
+			if server.ServerName != c.wantServer {
+				t.Fatalf("server name = %q, want %q", server.ServerName, c.wantServer)
+			}
+			if c.wantHost != "" && server.EndpointHost != c.wantHost {
+				t.Fatalf("endpoint host = %q, want %q", server.EndpointHost, c.wantHost)
+			}
+			if c.wantCmd != "" && server.CommandIdentity != c.wantCmd {
+				t.Fatalf("command identity = %q, want %q", server.CommandIdentity, c.wantCmd)
+			}
+
+			// mcp_client_configuration record must also resolve (the OTHER
+			// kind this same file read yields, per schema doc §6a) — proves
+			// the load-bearing resource, not just the server list, extracts.
+			var sawClientConfig bool
+			for _, rec := range result.records {
+				if rec.Kind == "mcp_client_configuration" {
+					sawClientConfig = true
+					if rec.Fields["client"] != c.client {
+						t.Errorf("mcp_client_configuration client field = %q, want %q", rec.Fields["client"], c.client)
+					}
+					if rec.Fields["scope"] != c.scope {
+						t.Errorf("mcp_client_configuration scope field = %q, want %q", rec.Fields["scope"], c.scope)
+					}
+				}
+			}
+			if !sawClientConfig {
+				t.Fatalf("expected an mcp_client_configuration record alongside the server, got records: %+v", result.records)
+			}
+		})
+	}
+
+	// Negative: an undeclared (client, scope) pair for these two vendors must
+	// stay unsupported, not silently fall through to some other vendor's path.
+	t.Run("cline project is not a declared source", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		result := Scan("cline", ScopeProject)
+		if result.Status != ScanUnsupported {
+			t.Fatalf("expected ScanUnsupported for cline/project (only global is catalogued), got %q", result.Status)
+		}
+	})
+
+	// Negative: amp/managed is not a declared scope (only global and project
+	// are authored on sourcegraph_cody.yaml) — must not silently fall through
+	// to another vendor's or another scope's source.
+	t.Run("amp managed is not a declared source", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		result := Scan("amp", ScopeManaged)
+		if result.Status != ScanUnsupported {
+			t.Fatalf("expected ScanUnsupported for amp/managed (only global and project are catalogued), got %q", result.Status)
+		}
+	})
+}
+
 // TestOneConfigFileYieldsClientConfigAndServers proves the multi-kind case
 // the schema doc's §6a exists to demonstrate: one .claude.json read produces
 // ONE mcp_client_configuration record plus one mcp_server_deployment record
