@@ -44,8 +44,35 @@ func TestDryRunInstallNeverWrites(t *testing.T) {
 	}
 }
 
+// TestInstallUsesBaseKeyAndReportsEachClient: the user's own base config is the
+// default binding for every client the installer writes (TENG-2306).
+func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/cli/configs/base/key" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
+	}))
+	defer server.Close()
+
+	writer := &installTestWriter{name: "codex", path: "/tmp/config.toml"}
+	if _, err := installWritersWithCredential(context.Background(), api.NewClient(server.URL, "token"), []agent.AgentWriter{writer}, agent.ScopeGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if writer.written.Headers["Authorization"] != "Bearer telara_mcp_base_key" {
+		t.Fatalf("client was not wired to the base credential: %#v", writer)
+	}
+}
+
+// TestInstallUsesExplicitMasterKeyAndReportsEachClient: a gateway too old to
+// serve the base route still gets a working install via the tenant master key.
 func TestInstallUsesExplicitMasterKeyAndReportsEachClient(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/base/key" {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/cli/configs/master/key" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -102,6 +129,8 @@ func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/base/key":
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/master/key":
 			http.Error(w, `{"error":"master has no deployment"}`, http.StatusNotFound)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/resolve":

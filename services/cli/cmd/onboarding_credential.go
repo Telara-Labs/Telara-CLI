@@ -11,6 +11,15 @@ import (
 // auto-wiring and the explicit installer. Keeping this in one place prevents
 // the two entry points from silently drifting back to different key lifecycles.
 func onboardingCredential(ctx context.Context, client *api.Client, keyName string) (rawKey, mcpURL, configName string, err error) {
+	// The user's own base configuration is the default binding (TENG-2306): it is
+	// always on, least-privilege, and scoped to this user. Only fall back to the
+	// tenant master when the gateway is too old to serve the base route — the
+	// master's effective policy is the union of every policy in the tenant, so it
+	// is a credential of last resort, not a default.
+	if base, baseErr := client.IssueBaseKey(ctx, keyName); baseErr == nil {
+		return base.BaseKey, base.MCPURL, base.ConfigName, nil
+	}
+
 	master, masterErr := client.IssueMasterKey(ctx, keyName)
 	if masterErr == nil {
 		return master.MasterKey, master.MCPURL, "Master", nil

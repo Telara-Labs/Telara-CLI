@@ -119,6 +119,36 @@ func (c *Client) IssueMasterKey(ctx context.Context, name string) (*MasterKeyRes
 	return &resp, nil
 }
 
+// BaseKeyResponse is returned once by POST /v1/cli/configs/base/key.
+type BaseKeyResponse struct {
+	BaseKey     string `json:"base_key"`
+	MCPURL      string `json:"mcp_url"`
+	MCPConfigID string `json:"mcp_config_id"`
+	ConfigName  string `json:"config_name"`
+	ScopeType   string `json:"scope_type"`
+	ScopeID     string `json:"scope_id"`
+}
+
+// IssueBaseKey mints a user-scope key bound to the caller's always-on base MCP
+// configuration, provisioning that config on first use (TENG-2306). This is the
+// default binding for local clients: the tenant master config's effective policy
+// is the union of every policy attached to every config in the tenant, so it was
+// never a safe default for an ordinary user.
+//
+// Older gateways do not serve this route; callers fall back to IssueMasterKey.
+func (c *Client) IssueBaseKey(ctx context.Context, name string) (*BaseKeyResponse, error) {
+	var resp BaseKeyResponse
+	if err := c.Post(ctx, "/v1/cli/configs/base/key", struct {
+		Name string `json:"name,omitempty"`
+	}{Name: name}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.BaseKey == "" {
+		return nil, fmt.Errorf("base key response did not include a key")
+	}
+	return &resp, nil
+}
+
 // ListDeployments fetches the deployments accessible to the current user for the given config ID.
 func (c *Client) ListDeployments(ctx context.Context, configID string) (*ListDeploymentsResponse, error) {
 	var resp ListDeploymentsResponse
