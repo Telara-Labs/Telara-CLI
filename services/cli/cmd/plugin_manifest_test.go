@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -87,5 +88,31 @@ func TestCursorMarketplaceUsesTheSameKeylessConnector(t *testing.T) {
 	}
 	if len(plugin.Variables) != 0 {
 		t.Fatalf("Cursor plugin must not ask the employee for credentials or tenant configuration: %s", plugin.Variables)
+	}
+}
+
+func TestTelaraPluginIncludesThePublicOperationalSkill(t *testing.T) {
+	pluginRoot := filepath.Join("..", "..", "..", "plugins", "telara-connect")
+	skillPath := filepath.Join(pluginRoot, "skills", "telara", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(data)
+	for _, required := range []string{
+		"name: telara",
+		"telara_knowledge_search",
+		"telara_execute_action",
+		"telara_tool_search",
+		"telara_tool_describe",
+		"telara://integrations/available",
+		"Do not ask the user for an API key, MCP URL, tenant ID",
+	} {
+		if !strings.Contains(skill, required) {
+			t.Fatalf("Telara public skill is missing %q", required)
+		}
+	}
+	if strings.Contains(skill, "run_action") {
+		t.Fatal("Telara public skill must use the canonical telara_execute_action tool")
 	}
 }
