@@ -29,10 +29,14 @@ func NormalizeAPIBaseURL(raw string) string {
 }
 
 // Prefs holds user-level CLI preferences persisted to config.json.
+//
+// An `auto_rotate` field lived here from the first commit but was never read
+// or written by any released CLI (omitempty + no writer means it never reached
+// disk), so it was removed in TENG-2353. A hand-added `auto_rotate` key in an
+// existing config.json is ignored on load, as encoding/json drops unknown keys.
 type Prefs struct {
 	ActiveContext string `json:"active_context,omitempty"`
 	APIURL        string `json:"api_url,omitempty"`
-	AutoRotate    bool   `json:"auto_rotate,omitempty"`
 }
 
 // DefaultPrefs returns a Prefs struct with default values applied.
