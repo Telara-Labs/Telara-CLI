@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
-	catalog "gitlab.com/telara-labs/telara-utilities/go/integrations/catalog"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -190,7 +189,7 @@ func scanCatalogSource(src catalogFileSource) ConfigScanResult {
 // adding a catalog `fields:`/`value_map:` row. The catalog only tells this
 // engine WHERE to look (items_path, id_field) — never how to classify what
 // it finds there.
-func walkResource(res catalog.AIEstateResourceSpec, top map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
+func walkResource(res aiEstateResourceSpec, top map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
 	if res.ItemsPath == "" {
 		get := pseudoFieldResolver(top, "", src, path)
 		id, ok := resolveIdentity(res, get)
@@ -237,7 +236,7 @@ func walkResource(res catalog.AIEstateResourceSpec, top map[string]interface{}, 
 
 // walkResourceObjectItems is the object-shaped items_path case, unchanged
 // from before list support was added.
-func walkResourceObjectItems(res catalog.AIEstateResourceSpec, items map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
+func walkResourceObjectItems(res aiEstateResourceSpec, items map[string]interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
 	keys := make([]string, 0, len(items))
 	for k := range items {
 		keys = append(keys, k)
@@ -277,7 +276,7 @@ func walkResourceObjectItems(res catalog.AIEstateResourceSpec, items map[string]
 // (continue_dev.yaml uses `name`). Order is preserved as declared in the
 // source file rather than sorted, since there is no key to sort by and the
 // file's own order is as stable as anything else available.
-func walkResourceListItems(res catalog.AIEstateResourceSpec, items []interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
+func walkResourceListItems(res aiEstateResourceSpec, items []interface{}, src catalogFileSource, path string) (records []engineRecord, dropped int) {
 	for _, raw := range items {
 		entry, ok := raw.(map[string]interface{})
 		if !ok {
@@ -335,7 +334,7 @@ func pseudoFieldResolver(item map[string]interface{}, key string, src catalogFil
 // one), and report failure — never inventing an identity — when nothing
 // resolves. Per §7 property 3, the caller must count every such failure
 // against coverage rather than dropping it silently.
-func resolveIdentity(res catalog.AIEstateResourceSpec, get func(field string) string) (id string, resolved bool) {
+func resolveIdentity(res aiEstateResourceSpec, get func(field string) string) (id string, resolved bool) {
 	if res.IDField != "" {
 		if v := get(res.IDField); v != "" {
 			return v, true
@@ -355,7 +354,7 @@ func resolveIdentity(res catalog.AIEstateResourceSpec, get func(field string) st
 // AIEstateValueMapDefault-less here since none of today's file sources need
 // a default — see catalog.go's value_map handling for the two kinds that
 // exercise this).
-func extractFields(res catalog.AIEstateResourceSpec, item map[string]interface{}, get func(string) string) map[string]string {
+func extractFields(res aiEstateResourceSpec, item map[string]interface{}, get func(string) string) map[string]string {
 	if len(res.Fields) == 0 {
 		return nil
 	}

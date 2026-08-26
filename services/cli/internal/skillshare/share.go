@@ -7,25 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gitlab.com/telara-labs/telara-utilities/go/skillscan"
 )
-
-// Finding and Severity are re-exported from the shared scanner so this package
-// stays the CLI's single surface, while the DETECTION lives in one place both
-// the CLI and the enforcing server import. A local copy would drift, and users
-// would be blocked by rules their tooling never warned them about.
-type Finding = skillscan.Finding
-
-// Severity values, re-exported.
-const (
-	SeverityCritical = skillscan.SeverityCritical
-	SeverityWarn     = skillscan.SeverityWarn
-)
-
-// Scan and HasCritical delegate to the shared scanner.
-func Scan(body string) []Finding   { return skillscan.Scan(body) }
-func HasCritical(f []Finding) bool { return skillscan.HasCritical(f) }
 
 // share.go builds what a `telara skill share` actually sends.
 //
@@ -217,16 +199,15 @@ func parseFrontmatter(content string) (name, description, version string) {
 	return name, description, version
 }
 
-// LocalVerdict assesses a body with the shared ruleset, so the CLI can show the
-// same score the server will compute.
+// LocalVerdict assesses a body with the CLI-owned preview ruleset.
 //
 // Shown as a PREVIEW, never as the decision. Presenting it as final would make
 // the CLI promise an outcome it cannot guarantee — the user's binary is not the
 // enforcement point.
-func LocalVerdict(body string) skillscan.Verdict {
-	_, v := skillscan.ScanAndAssess(body, skillscan.DefaultPolicy())
+func LocalVerdict(body string) Verdict {
+	_, v := ScanAndAssess(body, DefaultPolicy())
 	return v
 }
 
 // ExplainVerdict renders citations for display.
-func ExplainVerdict(v skillscan.Verdict) []string { return skillscan.Explain(v) }
+func ExplainVerdict(v Verdict) []string { return Explain(v) }

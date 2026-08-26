@@ -5,9 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"testing/fstest"
-
-	catalog "gitlab.com/telara-labs/telara-utilities/go/integrations/catalog"
 )
 
 // catalog_engine_test.go exercises the catalog-driven §7 engine loop
@@ -48,7 +45,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 			configPath: func(home, cwd string) string {
 				return filepath.Join(home, ".claude.json")
 			},
-			fixture: `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
+			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
 			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
 		},
 		{
@@ -88,7 +85,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 			configPath: func(home, cwd string) string {
 				return filepath.Join(home, ".codex", "config.toml")
 			},
-			fixture: "[mcp_servers.github]\ncommand = \"npx\"\nargs = [\"-y\", \"@modelcontextprotocol/server-github\"]\n",
+			fixture:    "[mcp_servers.github]\ncommand = \"npx\"\nargs = [\"-y\", \"@modelcontextprotocol/server-github\"]\n",
 			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
 		},
 		{
@@ -256,7 +253,7 @@ func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
 			// "amp.mcpServers" key; local server entries carry command/args,
 			// no "type" discriminator (verifies the value_map "": stdio
 			// default, not a literal type field).
-			fixture:    `{"amp.notifications.enabled":true,"amp.mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest","--headless"]}}}`,
+			fixture: `{"amp.notifications.enabled":true,"amp.mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest","--headless"]}}}`,
 			// NormalizeCommandIdentity (privacy.go) stops at the first safe
 			// package identity token, so the trailing --headless flag (after
 			// the package arg) is intentionally not captured.
@@ -576,38 +573,20 @@ func TestSkillScopesRemainSeparateBoundary(t *testing.T) {
 	}
 }
 
-// TestNonFileSourcesSkippedSilently proves the engine loop's second property
-// (schema doc §7): tool and workload sources are invisible to the CLI
-// without erroring. The real embedded catalog has real discover:tool sources
-// today (e.g. slack.yaml) — this drives the assertion against them directly
-// rather than a hand-built fixture.
-func TestNonFileSourcesSkippedSilently(t *testing.T) {
-	specs, err := catalog.LoadIntegrationsFromFS(catalog.EmbeddedFS)
+// TestCLIRegistryIsLocalAndExecutable proves endpoint discovery is defined in
+// this module, contains only file-backed work the CLI can execute, and remains
+// meaningful without the private integration catalog module.
+func TestCLIRegistryIsLocalAndExecutable(t *testing.T) {
+	sources, err := fileSources()
 	if err != nil {
-		t.Fatalf("loading embedded catalog: %v", err)
+		t.Fatalf("fileSources: %v", err)
 	}
-	toolIntegration := ""
-	for name, spec := range specs {
-		if spec.AIEstate == nil {
-			continue
-		}
-		for _, src := range spec.AIEstate.Sources {
-			if src.EffectiveDiscover() == catalog.AIEstateDiscoverTool {
-				toolIntegration = name
-			}
-		}
-	}
-	if toolIntegration == "" {
-		t.Fatal("expected at least one discover:tool ai_estate source in the embedded catalog to test against")
-	}
-
-	sources, err := loadCatalogFileSourcesFromFS(catalog.EmbeddedFS)
-	if err != nil {
-		t.Fatalf("loadCatalogFileSourcesFromFS: %v", err)
+	if len(sources) != 20 {
+		t.Fatalf("CLI registry has %d sources, want 20", len(sources))
 	}
 	for _, s := range sources {
-		if s.IntegrationName == toolIntegration {
-			t.Fatalf("discover:tool integration %q leaked into the file-source engine", toolIntegration)
+		if s.IntegrationName == "" || s.ClientID == "" || s.Scope == "" || len(s.ConfigPaths) == 0 || len(s.Resources) == 0 {
+			t.Fatalf("invalid local source: %+v", s)
 		}
 	}
 }
@@ -642,43 +621,22 @@ func (e explodingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // whose identity cannot be resolved (id_field empty, no id_fallback_fields
 // match) is DROPPED and COUNTED, never silently absent. Every shipped
 // production id_field is a pseudo-field (_path/_key) that is always
-// non-empty by construction, so this drives a small synthetic catalog
-// (real YAML text through the real loader, via an in-memory fs.FS standing
-// in for definitions/) whose resource identifies servers by a real,
-// sometimes-missing field instead.
+// non-empty by construction, so this uses a small local source whose resource
+// identifies servers by a real, sometimes-missing field instead.
 func TestUnresolvableIdentityDroppedAndCounted(t *testing.T) {
-	const def = `
-name: drop_fixture_client
-display_name: Drop Fixture Client
-description: Synthetic fixture integration exercising id_field/id_fallback_fields.
-api:
-  type: mcp
-ai_estate:
-  sources:
-    - substrate: endpoint
-      discover: file
-      client_id: drop-fixture
-      scope: global
-      config_paths: [".dropfixture/config.json"]
-      resources:
-        - kind: mcp_server_deployment
-          items_path: mcpServers
-          id_field: server_id
-          id_fallback_fields: [alt_id]
-          id_fallback_prefix: "fallback:"
-          fields:
-            name: _key
-`
-	fsys := fstest.MapFS{
-		"definitions/drop_fixture_client.yaml": &fstest.MapFile{Data: []byte(def)},
-	}
-
-	sources, err := loadCatalogFileSourcesFromFS(fsys)
-	if err != nil {
-		t.Fatalf("loadCatalogFileSourcesFromFS: %v", err)
-	}
-	if len(sources) != 1 {
-		t.Fatalf("expected 1 file source from the fixture catalog, got %d", len(sources))
+	source := catalogFileSource{
+		IntegrationName: "drop_fixture_client",
+		ClientID:        "drop-fixture",
+		Scope:           ScopeGlobal,
+		ConfigPaths:     []string{".dropfixture/config.json"},
+		Resources: []aiEstateResourceSpec{{
+			Kind:             "mcp_server_deployment",
+			ItemsPath:        "mcpServers",
+			IDField:          "server_id",
+			IDFallbackFields: []string{"alt_id"},
+			IDFallbackPrefix: "fallback:",
+			Fields:           map[string][]string{"name": {"_key"}},
+		}},
 	}
 
 	cwd := t.TempDir()
@@ -691,7 +649,7 @@ ai_estate:
 		}
 	}`)
 
-	result := scanCatalogSource(sources[0])
+	result := scanCatalogSource(source)
 	requireStatus(t, result, ScanOK)
 
 	if result.DroppedRecords != 1 {
@@ -722,40 +680,12 @@ ai_estate:
 	}
 }
 
-// TestRealEmbeddedCatalogFileSourcesAreExecuted is the proof telara-
-// utilities' (currently held-out) discover-mode reachability test demands
-// before AIEstateModeOwner[AIEstateDiscoverFile] may name this engine: every
-// discover:file source shipped in the real embedded catalog is found by
-// loadCatalogFileSourcesFromFS AND actually executes to a scan result — not
-// merely parsed and never read. See catalog.go's package doc for the full
-// context and this change's final report for whether the claim was made.
-func TestRealEmbeddedCatalogFileSourcesAreExecuted(t *testing.T) {
-	specs, err := catalog.LoadIntegrationsFromFS(catalog.EmbeddedFS)
+// TestEveryCLIRegistrySourceExecutes proves every source shipped in the local
+// registry produces a well-formed scan result, even on an empty laptop.
+func TestEveryCLIRegistrySourceExecutes(t *testing.T) {
+	sources, err := fileSources()
 	if err != nil {
-		t.Fatalf("loading embedded catalog: %v", err)
-	}
-	var shippedFileSources int
-	for _, spec := range specs {
-		if spec.AIEstate == nil {
-			continue
-		}
-		for _, src := range spec.AIEstate.Sources {
-			if src.EffectiveDiscover() == catalog.AIEstateDiscoverFile {
-				shippedFileSources++
-			}
-		}
-	}
-	if shippedFileSources == 0 {
-		t.Fatal("expected the embedded catalog to ship at least one discover:file source")
-	}
-
-	sources, err := loadCatalogFileSourcesFromFS(catalog.EmbeddedFS)
-	if err != nil {
-		t.Fatalf("loadCatalogFileSourcesFromFS: %v", err)
-	}
-	if len(sources) != shippedFileSources {
-		t.Fatalf("engine found %d file sources, catalog shipped %d — some source was declared but never reached the engine",
-			len(sources), shippedFileSources)
+		t.Fatalf("fileSources: %v", err)
 	}
 
 	// Not merely FOUND — EXECUTED: every one of them must produce a real,
@@ -770,9 +700,6 @@ func TestRealEmbeddedCatalogFileSourcesAreExecuted(t *testing.T) {
 	t.Chdir(cwd)
 
 	for _, src := range sources {
-		if _, shipped := specs[src.IntegrationName]; !shipped {
-			continue // e.g. the vscode provisional fallback — not a catalog-shipped source
-		}
 		result := scanCatalogSource(src)
 		if result.ClientFamily != src.ClientID || result.Scope != src.Scope {
 			t.Fatalf("source %s/%s: scan result identity mismatch: %+v", src.ClientID, src.Scope, result)
