@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
@@ -48,6 +50,18 @@ var skillShareCmd = &cobra.Command{
 	RunE:  runSkillShare,
 }
 
+var skillInstallCmd = &cobra.Command{
+	Use:   "install <skill-name|skill-id>",
+	Short: "Install a shared skill onto this machine",
+	Long: `Download an approved shared skill and write it where your agent will load it.
+
+The registry's content hash is VERIFIED before anything is written, and the body
+is re-scanned locally. Only clients with a real skills directory can be written
+to; for the others, connect them to Telara's MCP server and use telara_skill_load.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSkillInstall,
+}
+
 var skillRevokeCmd = &cobra.Command{
 	Use:   "revoke <skill-id>",
 	Short: "Withdraw a shared skill",
@@ -61,7 +75,12 @@ func init() {
 	skillShareCmd.Flags().Bool("force", false, "Skip the LOCAL scan check. The server re-scans and may still refuse")
 	skillShareCmd.Flags().Bool("dry-run", false, "Run the scan and print what would be sent, without sending it")
 
-	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillRevokeCmd)
+	skillInstallCmd.Flags().String("client", "claude-code", "Which agent client to install into, or 'all' for every detected one")
+	skillInstallCmd.Flags().String("scope", "global", "Where to install: global | project")
+	skillInstallCmd.Flags().Bool("force", false, "Overwrite a locally modified SKILL.md")
+	skillInstallCmd.Flags().Bool("dry-run", false, "Fetch and verify, but write nothing")
+
+	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillInstallCmd, skillRevokeCmd)
 	rootCmd.AddCommand(skillCmd)
 }
 
@@ -115,11 +134,23 @@ func runSkillList(cmd *cobra.Command, args []string) error {
 	}
 	sort.Slice(resp.Skills, func(i, j int) bool { return resp.Skills[i].Name < resp.Skills[j].Name })
 	for _, s := range resp.Skills {
+		// A PENDING skill is shared but not loadable by anyone. Without this
+		// the line was identical to a live one, so an author had no way to see
+		// that their enterprise share was still sitting in a review queue.
 		state := ""
-		if s.Revoked {
+		switch {
+		case s.Revoked:
 			state = "  [revoked]"
+		case s.ApprovalState == "pending":
+			state = "  [awaiting approval — not loadable yet]"
 		}
-		fmt.Printf("  %-28s v%-3d %-11s %s%s\n", s.Name, s.Version, s.Scope, s.SkillID, state)
+		// A narrower audience than the whole tenant is worth showing: it is the
+		// difference between "everyone has this" and "one team does".
+		audience := ""
+		if s.TargetScopeType != "" && s.TargetScopeType != "tenant" {
+			audience = "  ->" + s.TargetScopeType
+		}
+		fmt.Printf("  %-28s v%-3d %-11s %s%s%s\n", s.Name, s.Version, s.Scope, s.SkillID, audience, state)
 	}
 	return nil
 }
@@ -222,6 +253,10 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 		verb = "updated"
 	}
 	fmt.Printf("\n%s %s as v%d (%s), visible to %s\n", skill.Name, verb, resp.Version, resp.SkillID, resp.Scope)
+	// The SERVER's verdict, which is the enforcing one. Printed even on
+	// success: warn-level findings do not block, and until now the author
+	// never learned about them at all.
+	printRiskVerdict(resp.Risk)
 	return nil
 }
 
@@ -295,4 +330,164 @@ func shareGate(findings []skillshare.Finding, force bool) error {
 		return fmt.Errorf("refusing to share: credential-grade findings above. Remove them, or re-run with --force to skip this local check (the server re-scans and may still refuse)")
 	}
 	return nil
+}
+
+// runSkillInstall fetches one approved skill and writes it to disk.
+func runSkillInstall(cmd *cobra.Command, args []string) error {
+	ref := args[0]
+	clientName, _ := cmd.Flags().GetString("client")
+	scopeName, _ := cmd.Flags().GetString("scope")
+	force, _ := cmd.Flags().GetBool("force")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+	scope, err := parseSkillScope(scopeName)
+	if err != nil {
+		return err
+	}
+
+	endpoint := config.ScanSubmitEndpoint()
+	token, err := auth.LoadToken(endpoint)
+	if err != nil {
+		return fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
+	}
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+	detail, err := api.NewClient(endpoint, token).GetSharedSkill(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("fetch skill %q: %w", ref, err)
+	}
+
+	fmt.Printf("Skill:   %s (v%d, %s)\n", detail.Name, detail.Version, detail.Scope)
+	fmt.Printf("Hash:    %s\n", detail.ContentHash)
+	fmt.Printf("Shared by: %s\n", detail.SharedBy)
+	if detail.StalePolicyVersion {
+		fmt.Println("NOTE:    this skill's security assessment predates the current scanner rules.")
+	}
+	// Assets are counted at share time but never uploaded (see share.go), so
+	// there is nothing to install. Said plainly rather than leaving someone with
+	// a skill that references files they do not have.
+	if detail.AssetCount > 0 {
+		fmt.Printf("NOTE:    the author bundled %d asset file(s). The registry does not store them, "+
+			"so they are NOT installed.\n", detail.AssetCount)
+	}
+	printRiskVerdict(detail.Risk)
+
+	targets, err := installTargets(clientName, scope)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return fmt.Errorf("no agent client with a skills directory was detected")
+	}
+
+	if dryRun {
+		for _, t := range targets {
+			fmt.Printf("\n[dry-run] would install to %s/%s/SKILL.md\n", t.dir, detail.Name)
+		}
+		return nil
+	}
+
+	for _, t := range targets {
+		res, werr := skillshare.WriteSkill(t.dir, detail.Name, detail.Body, detail.ContentHash, force)
+		if werr != nil {
+			var modErr *skillshare.ErrLocalModification
+			if errors.As(werr, &modErr) {
+				return fmt.Errorf("%w\n\nRe-run with --force to overwrite it", werr)
+			}
+			return werr
+		}
+		verb := "Installed"
+		if res.Overwrote {
+			verb = "Updated"
+		}
+		fmt.Printf("\n%s %s -> %s\n", verb, t.client, res.Path)
+	}
+	return nil
+}
+
+type installTarget struct {
+	client string
+	dir    string
+}
+
+// installTargets resolves which clients to write into.
+//
+// A detected client with no skills directory is NAMED, with the alternative
+// that actually works for it. Silently skipping would leave someone believing
+// Cursor had the skill; failing outright would be unhelpful when claude-code is
+// also present and did get it.
+func installTargets(clientName string, scope agent.Scope) ([]installTarget, error) {
+	var out []installTarget
+	var withoutSkills []string
+
+	for _, w := range agent.AllWriters() {
+		if clientName != "all" && w.Name() != clientName {
+			continue
+		}
+		if clientName == "all" && !w.Detect() {
+			continue
+		}
+		sw, ok := w.(agent.SkillsWriter)
+		if !ok {
+			withoutSkills = append(withoutSkills, w.Name())
+			continue
+		}
+		dir, err := sw.SkillsDir(scope)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, installTarget{client: w.Name(), dir: dir})
+	}
+
+	for _, name := range withoutSkills {
+		fmt.Fprintf(os.Stderr,
+			"%s has no skills directory — connect it to Telara's MCP server and use "+
+				"telara_skill_load instead of installing to disk.\n", name)
+	}
+	if len(out) == 0 && clientName != "all" && len(withoutSkills) == 0 {
+		return nil, fmt.Errorf("unknown client %q", clientName)
+	}
+	return out, nil
+}
+
+// parseSkillScope is deliberately NOT cmd/install.go's parseInstallScope.
+//
+// That one accepts global|managed, because an MCP config can be deployed by an
+// enterprise administrator. Skills accept global|project instead: a skill is
+// workspace-shaped (a project can reasonably carry its own runbook) and there
+// is no managed skills directory to write to. Same word, different axis.
+func parseSkillScope(name string) (agent.Scope, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "global", "":
+		return agent.ScopeGlobal, nil
+	case "project":
+		return agent.ScopeProject, nil
+	default:
+		return 0, fmt.Errorf("scope must be 'global' or 'project', got %q", name)
+	}
+}
+
+// printRiskVerdict shows what the SERVER recorded.
+//
+// Printed on share and on install alike. The CLI used to discard this entirely,
+// so an author never saw the warn-level findings that did not block — the ones
+// worth acting on before somebody else loads the skill.
+func printRiskVerdict(v *api.RiskVerdict) {
+	if v == nil {
+		return
+	}
+	fmt.Printf("Scan:    score %d of threshold %d", v.Score, v.Threshold)
+	if v.PolicyVersion != "" {
+		fmt.Printf(" (%s)", v.PolicyVersion)
+	}
+	fmt.Println()
+	for _, fr := range v.FiredRules {
+		marker := " "
+		if fr.Severity == "critical" {
+			marker = "!"
+		}
+		fmt.Printf("  %s %s %s line %d (%s, %d pts) — %s\n",
+			marker, fr.RuleID, fr.Name, fr.Line, fr.Severity, fr.Points, fr.Explanation)
+	}
 }

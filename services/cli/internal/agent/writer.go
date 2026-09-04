@@ -61,7 +61,29 @@ func PlatformToolNames() []string {
 		"telara_execute_action",
 		"telara_tool_search",
 		"telara_tool_describe",
+		// Shared skills (TENG-2719)
+		"telara_skill_search",
+		"telara_skill_load",
+		"telara_skill_publish",
 	}
+}
+
+// SkillsWriter is implemented by agent clients that have a real SKILL.md
+// directory, so `telara skill install` can put an approved skill where the
+// client will actually load it.
+//
+// DELIBERATELY OPTIONAL, and deliberately NOT implemented for the
+// rules/instructions-based clients. Cursor, Codex, Windsurf, VS Code, Gemini
+// and Amazon Q read their own instruction formats with their own frontmatter
+// dialects; writing a SKILL.md into .cursor/rules/*.mdc would mangle the
+// frontmatter and change what the agent reads while appearing to have worked.
+//
+// Those clients get the skill over MCP instead — telara_skill_load — which is
+// the cross-client answer and needs nothing on disk. `telara skill install`
+// says so by name rather than failing opaquely.
+type SkillsWriter interface {
+	// SkillsDir returns the directory holding <name>/SKILL.md for this scope.
+	SkillsDir(scope Scope) (string, error)
 }
 
 // AgentWriter reads and writes MCP server configuration for a specific agent tool.

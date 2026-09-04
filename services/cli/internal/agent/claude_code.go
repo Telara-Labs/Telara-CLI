@@ -143,3 +143,26 @@ func (w *claudeCodeWriter) settingsPath(scope Scope) (string, error) {
 		return "", fmt.Errorf("unknown scope %d", scope)
 	}
 }
+
+// SkillsDir implements SkillsWriter.
+//
+// Matches the discovery scanner's roots exactly (internal/discovery/skills.go),
+// so `telara scan`, `telara skill share` and `telara skill install` all agree
+// about where a skill lives. A different directory here would install skills
+// the scanner then reports as absent.
+func (w *claudeCodeWriter) SkillsDir(scope Scope) (string, error) {
+	switch scope {
+	case ScopeGlobal:
+		return filepath.Join(w.homeDir, ".claude", "skills"), nil
+	case ScopeProject:
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("cannot determine working directory: %w", err)
+		}
+		return filepath.Join(cwd, ".claude", "skills"), nil
+	default:
+		// Managed scope is an enterprise MCP lockdown path with no skills
+		// equivalent. Refused rather than silently writing to the user scope.
+		return "", fmt.Errorf("claude-code has no skills directory for scope %d", scope)
+	}
+}
