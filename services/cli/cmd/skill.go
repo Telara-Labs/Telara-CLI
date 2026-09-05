@@ -70,7 +70,8 @@ var skillRevokeCmd = &cobra.Command{
 }
 
 func init() {
-	skillShareCmd.Flags().String("scope", "", "Who receives it: team | enterprise | open-source (required)")
+	skillShareCmd.Flags().String("scope", "", "Who receives it: team | enterprise (required)")
+	skillShareCmd.Flags().String("audience", "", "Narrow the audience: team:<id> | user:<id>. Omitted means you alone.")
 	skillShareCmd.Flags().Bool("yes", false, "Skip the interactive prompt (still refuses on critical findings unless --force)")
 	skillShareCmd.Flags().Bool("force", false, "Skip the LOCAL scan check. The server re-scans and may still refuse")
 	skillShareCmd.Flags().Bool("dry-run", false, "Run the scan and print what would be sent, without sending it")
@@ -165,7 +166,7 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 	// No default scope: the audience is the decision being made, and defaulting
 	// it either way hides the most consequential field in the command.
 	if strings.TrimSpace(scopeRaw) == "" {
-		return fmt.Errorf("--scope is required (team | enterprise | open-source)")
+		return fmt.Errorf("--scope is required (team | enterprise)")
 	}
 	scope, err := skillshare.ParseScope(scopeRaw)
 	if err != nil {
@@ -220,11 +221,11 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 	}
 
 	if scope.IsIrreversible() {
-		fmt.Println("WARNING: open-source sharing cannot be undone. Once published the content")
-		fmt.Println("can be crawled, forked and indexed; revoking only stops Telara serving it.")
-		if !confirm(fmt.Sprintf("Publish %q publicly?", skill.Name), assumeYes && force) {
-			return fmt.Errorf("aborted")
-		}
+		return fmt.Errorf(
+			"open-source sharing is not available.\n\n" +
+				"It never published anywhere outside your tenant, while asking you to " +
+				"consent to public disclosure. Publish to your team, or request " +
+				"tenant-wide promotion from an admin.")
 	} else if !assumeYes {
 		if !confirm(fmt.Sprintf("Share %q with %s?", skill.Name, scope), false) {
 			return fmt.Errorf("aborted")
@@ -253,6 +254,9 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 		verb = "updated"
 	}
 	fmt.Printf("\n%s %s as v%d (%s), visible to %s\n", skill.Name, verb, resp.Version, resp.SkillID, resp.Scope)
+	if resp.ApprovalState == "pending" {
+		fmt.Println("NOT loadable yet: reaching the whole tenant needs approval from a tenant admin.")
+	}
 	// The SERVER's verdict, which is the enforcing one. Printed even on
 	// success: warn-level findings do not block, and until now the author
 	// never learned about them at all.

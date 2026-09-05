@@ -30,6 +30,9 @@ const (
 	// it can be crawled, forked and indexed; "revoke" only stops Telara serving
 	// it. That asymmetry is why it needs its own confirmation rather than being
 	// one more option in a list.
+	// ScopeOpenSource is REFUSED by the server (TENG-2759). Kept only so an old
+	// stored value still parses into something nameable rather than an error
+	// nobody can act on; it can never be published.
 	ScopeOpenSource Scope = "open-source"
 )
 
@@ -49,7 +52,7 @@ func ParseScope(raw string) (Scope, error) {
 			return s, nil
 		}
 	}
-	return "", fmt.Errorf("invalid scope %q (want one of: team, enterprise, open-source)", raw)
+	return "", fmt.Errorf("invalid scope %q (want one of: team, enterprise)", raw)
 }
 
 // IsIrreversible reports whether sharing at this scope cannot be taken back.

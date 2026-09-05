@@ -25,6 +25,9 @@ type ShareSkillResponse struct {
 	// Superseded reports that this upload replaced an earlier version of the
 	// same logical skill rather than creating a new one.
 	Superseded bool `json:"superseded"`
+	// ApprovalState is whether the skill is live or waiting for a tenant admin,
+	// as the server decided from the audience. Rendered, never re-derived.
+	ApprovalState string `json:"approval_state,omitempty"`
 	// Risk is the SERVER's verdict, which is the enforcing one.
 	//
 	// The gateway has always returned this and the CLI has always dropped it on
