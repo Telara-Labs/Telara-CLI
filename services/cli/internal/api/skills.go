@@ -130,6 +130,27 @@ func (c *Client) GetSharedSkill(ctx context.Context, idOrName string) (*SharedSk
 	return &resp, nil
 }
 
+// ListDeniedSkills returns the tenant's active removals for this machine to
+// enforce (TENG-2760).
+func (c *Client) ListDeniedSkills(ctx context.Context) ([]skillshare.DeniedSkill, error) {
+	var resp struct {
+		Denied []skillshare.DeniedSkill `json:"denied"`
+	}
+	if err := c.do(ctx, "GET", "/v1/cli/skills/denied", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Denied, nil
+}
+
+// DenySkill records or lifts an admin's removal. Admin only, server-enforced.
+func (c *Client) DenySkill(ctx context.Context, contentHash, skillName, reason string, lift bool) error {
+	body := map[string]any{
+		"contentHash": contentHash, "skillName": skillName,
+		"reason": reason, "lift": lift,
+	}
+	return c.do(ctx, "POST", "/v1/cli/skills/denied", body, nil)
+}
+
 // RevokeSkill withdraws a shared skill.
 //
 // Revocation is real for team and enterprise scope: Telara serves the body, so

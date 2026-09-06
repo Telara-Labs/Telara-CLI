@@ -94,6 +94,24 @@ func allSkillSpecs() []skillScanSpec {
 	}
 }
 
+// SkillRoots returns the directories a skill can be installed into.
+//
+// Exported so ENFORCEMENT can reach exactly the roots discovery already
+// considers, and no others (TENG-2760). Quarantine moves real files, so the set
+// of places it may touch has to come from one definition rather than being
+// re-derived by the caller — a second copy of these paths is a second thing
+// that can drift into pointing somewhere it should not.
+func SkillRoots() []string {
+	specs := allSkillSpecs()
+	roots := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		if strings.TrimSpace(spec.path) != "" {
+			roots = append(roots, spec.path)
+		}
+	}
+	return roots
+}
+
 // ScanSkills scans every known skill root, preserving absence and failure the
 // same way ScanAll does.
 func ScanSkills() []ConfigScanResult {

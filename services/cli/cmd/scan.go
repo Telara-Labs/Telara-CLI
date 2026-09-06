@@ -21,18 +21,29 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/discovery"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/skillshare"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
 
 var scanCmd = &cobra.Command{
 	Use:   "scan",
-	Short: "Scan local AI client MCP configs and submit an estate discovery report",
-	Long: `Read-only scan of AI client MCP configurations on this machine.
+	Short: "Report this machine's AI clients and skills, and apply administrator removals",
+	Long: `Scan the AI client MCP configurations and agent skills on this machine.
 
 Reports which MCP servers are configured (credential class only — never values),
-coverage per client/scope, and submits the result to Telara for AI estate inventory.
+which skills are installed (name and content hash — never the body), and
+coverage per client/scope, then submits the result to Telara for AI estate
+inventory.
 
-Use --dry-run to print exactly what would leave this machine without submitting.`,
+THIS COMMAND ALSO ENFORCES. If an administrator has withdrawn a skill, scan
+moves your copy out of the agent's load path into ~/.telara/quarantine/skills/
+and leaves a note saying who removed it and how to request it back. Nothing is
+deleted, including skills you wrote yourself. This is the only thing scan
+changes on your machine, and it is said here rather than done quietly: removal
+is not real if the copy already installed keeps loading.
+
+Use --dry-run to print exactly what would leave this machine. It submits
+nothing and quarantines nothing.`,
 	RunE: runScan,
 }
 
@@ -95,6 +106,19 @@ func runScan(cmd *cobra.Command, args []string) error {
 	token, err := auth.LoadToken(endpoint)
 	if err != nil {
 		return fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
+	}
+
+	// ENFORCEMENT RUNS FIRST, before the machine is described (TENG-2760).
+	//
+	// An admin's removal has to reach the copy already on disk, or removal is
+	// advisory: the skill keeps loading everywhere it was installed. Quarantining
+	// BEFORE the scan means the report describes the machine as it now is, rather
+	// than reporting a skill this very run was about to move.
+	//
+	// Skipped on --dry-run: that flag promises to change nothing, and moving
+	// somebody's files would be the largest possible violation of it.
+	if !dryRun {
+		enforceRemovals(endpoint, token, asJSON)
 	}
 
 	startedAt := time.Now().UTC()
@@ -244,4 +268,53 @@ func installationKey() string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// enforceRemovals quarantines skills an admin has withdrawn (TENG-2760).
+//
+// BEST EFFORT, and deliberately so. A scan that cannot reach the server still
+// has to report what is on this machine — inventory is the thing that always
+// works. Failing the whole run because the deny list was unreachable would trade
+// the guaranteed value for the conditional one.
+//
+// The consequence is stated plainly rather than implied: enforcement on the disk
+// path is only as timely as the next scan, so worst-case exposure after a removal
+// is one scan interval. The MCP path has no such window — telara_skill_load
+// re-resolves on every call and caches nothing — which is why loading a skill
+// over MCP is the stronger surface.
+func enforceRemovals(endpoint, token string, asJSON bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	denied, err := api.NewClient(endpoint, token).ListDeniedSkills(ctx)
+	if err != nil {
+		if !asJSON {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: could not fetch withdrawn skills (%v); nothing was quarantined this run\n", err)
+		}
+		return
+	}
+	if len(denied) == 0 {
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		if !asJSON {
+			fmt.Fprintf(os.Stderr, "WARNING: cannot resolve home directory; nothing was quarantined\n")
+		}
+		return
+	}
+
+	actions, err := skillshare.Enforce(home, denied)
+	// Report what DID happen before reporting the failure: a partial enforcement
+	// that says only "error" reads as though nothing moved, when files did.
+	for _, a := range actions {
+		if !asJSON {
+			fmt.Fprintf(os.Stderr, "Quarantined %q (withdrawn by your administrator) -> %s\n", a.SkillName, a.To)
+		}
+	}
+	if err != nil && !asJSON {
+		fmt.Fprintf(os.Stderr, "WARNING: %v\n", err)
+	}
 }
