@@ -151,6 +151,54 @@ func (c *Client) DenySkill(ctx context.Context, contentHash, skillName, reason s
 	return c.do(ctx, "POST", "/v1/cli/skills/denied", body, nil)
 }
 
+// SkillRequest is one ask in the queue (TENG-2761).
+type SkillRequest struct {
+	RequestID      string `json:"request_id"`
+	SkillName      string `json:"skill_name"`
+	ContentHash    string `json:"content_hash,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	RequestedBy    string `json:"requested_by"`
+	RequestedAt    string `json:"requested_at,omitempty"`
+	State          string `json:"state"`
+	ResolvedBy     string `json:"resolved_by,omitempty"`
+	ResolutionNote string `json:"resolution_note,omitempty"`
+}
+
+// RequestSkill asks the organisation for a skill: reinstate one that was
+// removed, or promote one to tenant reach.
+func (c *Client) RequestSkill(ctx context.Context, name, contentHash, reason string) (string, error) {
+	var resp struct {
+		RequestID string `json:"request_id"`
+	}
+	body := map[string]any{"skillName": name, "contentHash": contentHash, "reason": reason}
+	if err := c.do(ctx, "POST", "/v1/cli/skills/requests", body, &resp); err != nil {
+		return "", err
+	}
+	return resp.RequestID, nil
+}
+
+// ListSkillRequests returns the queue. Admins see every open request; anyone
+// else sees only their own — the server decides which.
+func (c *Client) ListSkillRequests(ctx context.Context, includeResolved bool) ([]SkillRequest, error) {
+	path := "/v1/cli/skills/requests"
+	if includeResolved {
+		path += "?include_resolved=true"
+	}
+	var resp struct {
+		Requests []SkillRequest `json:"requests"`
+	}
+	if err := c.do(ctx, "GET", path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Requests, nil
+}
+
+// ResolveSkillRequest grants or declines one. Admin only, server-enforced.
+func (c *Client) ResolveSkillRequest(ctx context.Context, requestID string, grant bool, note string) error {
+	body := map[string]any{"grant": grant, "note": note}
+	return c.do(ctx, "POST", "/v1/cli/skills/requests/"+url.PathEscape(requestID)+"/resolve", body, nil)
+}
+
 // RevokeSkill withdraws a shared skill.
 //
 // Revocation is real for team and enterprise scope: Telara serves the body, so

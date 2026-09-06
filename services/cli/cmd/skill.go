@@ -62,6 +62,42 @@ to; for the others, connect them to Telara's MCP server and use telara_skill_loa
 	RunE: runSkillInstall,
 }
 
+var skillRequestCmd = &cobra.Command{
+	Use:   "request <skill-name>",
+	Short: "Ask for a skill: reinstate a removed one, or promote one tenant-wide",
+	Long: `Ask an administrator for a skill.
+
+Use this when a skill you need was withdrawn, or when one that exists at team
+scope should reach the whole organisation. A request is not an approval — it
+creates something for an admin to decide on.
+
+If your copy was quarantined, the REMOVED.md note beside it names the content
+hash; pass it with --hash to ask for that exact version.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSkillRequest,
+}
+
+var skillRequestsCmd = &cobra.Command{
+	Use:   "requests",
+	Short: "List skill requests awaiting a decision",
+	Long: `Show outstanding skill requests.
+
+Administrators see every open request. Everyone else sees their own.`,
+	RunE: runSkillRequests,
+}
+
+var skillResolveCmd = &cobra.Command{
+	Use:   "resolve <request-id>",
+	Short: "Grant or decline a skill request (administrators only)",
+	Long: `Decide one skill request.
+
+Granting records the DECISION, not the grant itself: publish or reinstate the
+skill as a separate, deliberate act. A click on a queue item must not silently
+change what every colleague's agent loads.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSkillResolve,
+}
+
 var skillRevokeCmd = &cobra.Command{
 	Use:   "revoke <skill-id>",
 	Short: "Withdraw a shared skill",
@@ -81,7 +117,15 @@ func init() {
 	skillInstallCmd.Flags().Bool("force", false, "Overwrite a locally modified SKILL.md")
 	skillInstallCmd.Flags().Bool("dry-run", false, "Fetch and verify, but write nothing")
 
-	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillInstallCmd, skillRevokeCmd)
+	skillRequestCmd.Flags().String("reason", "", "Why you need it — an admin deciding on a bare name has nothing to decide with")
+	skillRequestCmd.Flags().String("hash", "", "Ask for an exact version (the REMOVED.md note beside a quarantined copy names it)")
+	skillRequestsCmd.Flags().Bool("all", false, "Include requests that have already been decided")
+	skillResolveCmd.Flags().Bool("grant", false, "Grant the request")
+	skillResolveCmd.Flags().Bool("decline", false, "Decline the request")
+	skillResolveCmd.Flags().String("note", "", "Shown to the requester — a decline with no explanation reads as being ignored")
+
+	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillInstallCmd, skillRevokeCmd,
+		skillRequestCmd, skillRequestsCmd, skillResolveCmd)
 	rootCmd.AddCommand(skillCmd)
 }
 
@@ -494,4 +538,90 @@ func printRiskVerdict(v *api.RiskVerdict) {
 		fmt.Printf("  %s %s %s line %d (%s, %d pts) — %s\n",
 			marker, fr.RuleID, fr.Name, fr.Line, fr.Severity, fr.Points, fr.Explanation)
 	}
+}
+
+// authedClient returns an API client for the pinned scan endpoint.
+func authedClient() (*api.Client, error) {
+	endpoint := config.ScanSubmitEndpoint()
+	token, err := auth.LoadToken(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("not logged in — run: telara login --token <tlrc_...>")
+	}
+	return api.NewClient(endpoint, token), nil
+}
+
+func runSkillRequest(cmd *cobra.Command, args []string) error {
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+	reason, _ := cmd.Flags().GetString("reason")
+	hash, _ := cmd.Flags().GetString("hash")
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+	id, err := client.RequestSkill(ctx, args[0], hash, reason)
+	if err != nil {
+		return fmt.Errorf("request %q: %w", args[0], err)
+	}
+	fmt.Printf("Requested %q (%s).\n", args[0], id)
+	fmt.Println("An administrator decides; you are not blocked from using anything you already have.")
+	return nil
+}
+
+func runSkillRequests(cmd *cobra.Command, args []string) error {
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+	all, _ := cmd.Flags().GetBool("all")
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+	requests, err := client.ListSkillRequests(ctx, all)
+	if err != nil {
+		return fmt.Errorf("list skill requests: %w", err)
+	}
+	if len(requests) == 0 {
+		fmt.Println("No skill requests.")
+		return nil
+	}
+	for _, r := range requests {
+		fmt.Printf("  %-38s %-28s %-10s %s\n", r.RequestID, r.SkillName, r.State, r.RequestedBy)
+		if r.Reason != "" {
+			fmt.Printf("      reason: %s\n", r.Reason)
+		}
+		if r.ResolutionNote != "" {
+			fmt.Printf("      decided by %s: %s\n", r.ResolvedBy, r.ResolutionNote)
+		}
+	}
+	return nil
+}
+
+func runSkillResolve(cmd *cobra.Command, args []string) error {
+	grant, _ := cmd.Flags().GetBool("grant")
+	decline, _ := cmd.Flags().GetBool("decline")
+	// Never defaulted. Defaulting would grant or decline something on the
+	// reviewer's behalf, which is the one thing a review command must not do.
+	if grant == decline {
+		return fmt.Errorf("pass exactly one of --grant or --decline")
+	}
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+	note, _ := cmd.Flags().GetString("note")
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.ResolveSkillRequest(ctx, args[0], grant, note); err != nil {
+		return fmt.Errorf("resolve %s: %w", args[0], err)
+	}
+	if grant {
+		fmt.Printf("Granted %s.\n", args[0])
+		fmt.Println("This records the decision. Publish or reinstate the skill as a separate step.")
+	} else {
+		fmt.Printf("Declined %s.\n", args[0])
+	}
+	return nil
 }
