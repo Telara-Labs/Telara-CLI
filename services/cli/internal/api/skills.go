@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/url"
+	"strconv"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/skillshare"
 )
@@ -191,6 +192,57 @@ func (c *Client) ListSkillRequests(ctx context.Context, includeResolved bool) ([
 		return nil, err
 	}
 	return resp.Requests, nil
+}
+
+// SkillAdoption is one cluster of identical skill bytes across the fleet.
+//
+// PrincipalCount is a POINTER because zero and unknown are different answers.
+// The estate only began recording a principal token recently, so a cluster made
+// of older rows can be counted per machine but not per person; nil renders as
+// unknown, and a real 0 could only mean "nobody", which would be a lie.
+type SkillAdoption struct {
+	ContentHash         string `json:"content_hash"`
+	SkillName           string `json:"skill_name"`
+	Description         string `json:"description,omitempty"`
+	InstallCount        int    `json:"install_count"`
+	PrincipalCount      *int   `json:"principal_count,omitempty"`
+	NameVariantCount    int    `json:"name_variant_count,omitempty"`
+	HasExecutable       bool   `json:"has_executable,omitempty"`
+	AlreadyShared       bool   `json:"already_shared,omitempty"`
+	SharedSkillID       string `json:"shared_skill_id,omitempty"`
+	SharedApprovalState string `json:"shared_approval_state,omitempty"`
+	Denied              bool   `json:"denied,omitempty"`
+	FirstSeen           string `json:"first_seen,omitempty"`
+	LastSeen            string `json:"last_seen,omitempty"`
+}
+
+// SkillAdoptionReport carries the clusters together with the denominator they
+// have to be read against.
+type SkillAdoptionReport struct {
+	Skills                []SkillAdoption `json:"skills"`
+	TotalDevicesReporting int             `json:"total_devices_reporting"`
+	MinInstallsApplied    int             `json:"min_installs_applied"`
+}
+
+// ListSkillAdoption reports which skills are already spreading on their own.
+// Admin only, server-enforced.
+func (c *Client) ListSkillAdoption(ctx context.Context, minInstalls int, includeShared bool) (*SkillAdoptionReport, error) {
+	q := url.Values{}
+	if minInstalls > 0 {
+		q.Set("min_installs", strconv.Itoa(minInstalls))
+	}
+	if includeShared {
+		q.Set("include_shared", "true")
+	}
+	path := "/v1/cli/skills/adoption"
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var resp SkillAdoptionReport
+	if err := c.do(ctx, "GET", path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // ResolveSkillRequest grants or declines one. Admin only, server-enforced.

@@ -98,6 +98,22 @@ change what every colleague's agent loads.`,
 	RunE: runSkillResolve,
 }
 
+var skillAdoptionCmd = &cobra.Command{
+	Use:   "adoption",
+	Short: "Show skills that are already spreading, as promotion candidates (administrators only)",
+	Long: `Report which skills are installed across the fleet.
+
+The input is what ` + "`telara scan`" + ` found on people's machines, not the shared
+registry — so most of what appears here was never published through Telara at
+all. That is the point: a skill on twelve laptops has an audience whether or not
+anybody submitted it, and that is the better signal for what to promote.
+
+Clusters are keyed on exact content. Two people who each edited a copy show up
+as two rows; "variants" on a row says how many other versions of that name
+exist, so an edited-copy split is visible rather than silently halving a count.`,
+	RunE: runSkillAdoption,
+}
+
 var skillRevokeCmd = &cobra.Command{
 	Use:   "revoke <skill-id>",
 	Short: "Withdraw a shared skill",
@@ -124,8 +140,11 @@ func init() {
 	skillResolveCmd.Flags().Bool("decline", false, "Decline the request")
 	skillResolveCmd.Flags().String("note", "", "Shown to the requester — a decline with no explanation reads as being ignored")
 
+	skillAdoptionCmd.Flags().Int("min-installs", 0, "Only show skills on at least this many machines (default 2)")
+	skillAdoptionCmd.Flags().Bool("include-shared", false, "Also show skills that already have a registry entry")
+
 	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillInstallCmd, skillRevokeCmd,
-		skillRequestCmd, skillRequestsCmd, skillResolveCmd)
+		skillRequestCmd, skillRequestsCmd, skillResolveCmd, skillAdoptionCmd)
 	rootCmd.AddCommand(skillCmd)
 }
 
@@ -594,6 +613,71 @@ func runSkillRequests(cmd *cobra.Command, args []string) error {
 		if r.ResolutionNote != "" {
 			fmt.Printf("      decided by %s: %s\n", r.ResolvedBy, r.ResolutionNote)
 		}
+	}
+	return nil
+}
+
+func runSkillAdoption(cmd *cobra.Command, args []string) error {
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+	minInstalls, _ := cmd.Flags().GetInt("min-installs")
+	includeShared, _ := cmd.Flags().GetBool("include-shared")
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Second)
+	defer cancel()
+	report, err := client.ListSkillAdoption(ctx, minInstalls, includeShared)
+	if err != nil {
+		return fmt.Errorf("read skill adoption: %w", err)
+	}
+
+	if len(report.Skills) == 0 {
+		// The denominator is printed even when nothing qualifies, because the
+		// two reasons for an empty report need different responses: nobody has
+		// copied anything, versus no machine has enrolled and there is nothing
+		// to report FROM.
+		fmt.Printf("No skill is installed on %d or more of the %d machines reporting.\n",
+			report.MinInstallsApplied, report.TotalDevicesReporting)
+		if report.TotalDevicesReporting == 0 {
+			fmt.Println("No machine has run `telara scan` yet, so the estate has nothing to count.")
+		}
+		return nil
+	}
+
+	fmt.Printf("Skills installed on %d+ of %d reporting machines:\n\n",
+		report.MinInstallsApplied, report.TotalDevicesReporting)
+	for _, s := range report.Skills {
+		fmt.Printf("  %-30s %d machines", s.SkillName, s.InstallCount)
+		if s.PrincipalCount != nil {
+			fmt.Printf("  %d people", *s.PrincipalCount)
+		} else {
+			// Never printed as 0. An unrecorded principal count and a real zero
+			// mean opposite things to somebody deciding whether to promote.
+			fmt.Printf("  (people: not recorded)")
+		}
+		fmt.Println()
+		if s.Description != "" {
+			fmt.Printf("      %s\n", s.Description)
+		}
+		fmt.Printf("      %s\n", s.ContentHash)
+		if s.NameVariantCount > 0 {
+			fmt.Printf("      %d other version(s) of this name exist — the true reach is split across them\n",
+				s.NameVariantCount)
+		}
+		if s.HasExecutable {
+			fmt.Println("      ships a runnable script")
+		}
+		if s.Denied {
+			fmt.Println("      ON THE DENY LIST and still spreading — enforcement is not reaching these machines")
+		}
+		if s.AlreadyShared {
+			fmt.Printf("      already in the registry (%s) as %s\n", s.SharedApprovalState, s.SharedSkillID)
+		}
+		fmt.Println()
+	}
+	if !includeShared {
+		fmt.Println("Skills already in the registry are hidden; pass --include-shared to see them.")
 	}
 	return nil
 }
