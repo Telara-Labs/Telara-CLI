@@ -194,6 +194,54 @@ func (c *Client) ListSkillRequests(ctx context.Context, includeResolved bool) ([
 	return resp.Requests, nil
 }
 
+// PendingSkill is one entry in the promotion review queue.
+type PendingSkill struct {
+	SkillID           string `json:"skill_id"`
+	Name              string `json:"name"`
+	Scope             string `json:"scope"`
+	Version           int    `json:"version"`
+	SharedBy          string `json:"shared_by"`
+	ContentHash       string `json:"content_hash"`
+	ApprovalState     string `json:"approval_state"`
+	ApprovalsRecorded int    `json:"approvals_recorded"`
+	ApprovalsRequired int    `json:"approvals_required"`
+}
+
+// ListPendingSkills returns skills awaiting promotion review.
+func (c *Client) ListPendingSkills(ctx context.Context) ([]PendingSkill, error) {
+	var resp struct {
+		Skills []PendingSkill `json:"skills"`
+	}
+	if err := c.do(ctx, "GET", "/v1/cli/skills/pending", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Skills, nil
+}
+
+// SkillApprovalResult is what one recorded decision changed.
+type SkillApprovalResult struct {
+	SkillID           string `json:"skill_id"`
+	ApprovalsRecorded int    `json:"approvals_recorded"`
+	ApprovalsRequired int    `json:"approvals_required"`
+	State             string `json:"state"`
+	Published         bool   `json:"published"`
+}
+
+// ApproveSkill records one promotion decision. Admin only, server-enforced.
+//
+// version is MANDATORY and is not derived here. Approval attaches to CONTENT,
+// not to a name: if the author supersedes the skill between a reviewer reading
+// it and deciding, an approval that named only the skill would land on bytes
+// nobody reviewed. The server refuses version <= 0 for the same reason.
+func (c *Client) ApproveSkill(ctx context.Context, skillID string, version int, approve bool, note string) (*SkillApprovalResult, error) {
+	body := map[string]any{"version": version, "approve": approve, "note": note}
+	var resp SkillApprovalResult
+	if err := c.do(ctx, "POST", "/v1/cli/skills/"+url.PathEscape(skillID)+"/approve", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // SkillAdoption is one cluster of identical skill bytes across the fleet.
 //
 // PrincipalCount is a POINTER because zero and unknown are different answers.

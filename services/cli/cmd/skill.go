@@ -98,6 +98,47 @@ change what every colleague's agent loads.`,
 	RunE: runSkillResolve,
 }
 
+var skillPendingCmd = &cobra.Command{
+	Use:   "pending",
+	Short: "List skills awaiting promotion review (administrators only)",
+	Long: `Show skills waiting for a tenant admin to approve.
+
+Only a TENANT-WIDE audience needs approval. Sharing to yourself, a team, a
+project or a named person is live immediately, so a healthy queue is short.
+
+Each row carries the version and content hash, because approval attaches to
+CONTENT rather than to a name — you approve specific bytes.`,
+	RunE: runSkillPending,
+}
+
+var skillApproveCmd = &cobra.Command{
+	Use:   "approve <skill-id>",
+	Short: "Approve a skill for tenant-wide reach (administrators only)",
+	Long: `Approve one pending skill.
+
+You cannot approve your own skill: an approval nobody but the author saw is not
+a review. Approving publishes it to everyone in the tenant, so read it first —
+` + "`telara skill install <name> --dry-run`" + ` fetches and verifies without writing.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error { return runSkillDecision(cmd, args, true) },
+}
+
+// A separate command rather than `approve --reject`. Two verbs cannot be
+// confused with each other, and neither can be reached by omitting a flag —
+// which is the property that matters most on a gate that publishes text every
+// colleague's agent will read and obey.
+var skillRejectCmd = &cobra.Command{
+	Use:   "reject <skill-id>",
+	Short: "Refuse a skill tenant-wide reach (administrators only)",
+	Long: `Reject one pending skill.
+
+The skill is not deleted and the author keeps it: rejection refuses TENANT-WIDE
+reach, nothing more. Use ` + "`telara skill request`" + ` semantics in reverse — say why in
+--note, because a refusal with no reason reads as being ignored.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error { return runSkillDecision(cmd, args, false) },
+}
+
 var skillAdoptionCmd = &cobra.Command{
 	Use:   "adoption",
 	Short: "Show skills that are already spreading, as promotion candidates (administrators only)",
@@ -140,11 +181,18 @@ func init() {
 	skillResolveCmd.Flags().Bool("decline", false, "Decline the request")
 	skillResolveCmd.Flags().String("note", "", "Shown to the requester — a decline with no explanation reads as being ignored")
 
+	for _, c := range []*cobra.Command{skillApproveCmd, skillRejectCmd} {
+		c.Flags().Int("version", 0, "The exact version being decided on (from `telara skill pending`)")
+		c.Flags().String("note", "", "Recorded with the decision and shown to the author")
+		c.Flags().Bool("yes", false, "Skip the confirmation prompt. Requires --version: a scripted decision must name the bytes")
+	}
+
 	skillAdoptionCmd.Flags().Int("min-installs", 0, "Only show skills on at least this many machines (default 2)")
 	skillAdoptionCmd.Flags().Bool("include-shared", false, "Also show skills that already have a registry entry")
 
 	skillCmd.AddCommand(skillListCmd, skillShareCmd, skillInstallCmd, skillRevokeCmd,
-		skillRequestCmd, skillRequestsCmd, skillResolveCmd, skillAdoptionCmd)
+		skillRequestCmd, skillRequestsCmd, skillResolveCmd, skillAdoptionCmd,
+		skillPendingCmd, skillApproveCmd, skillRejectCmd)
 	rootCmd.AddCommand(skillCmd)
 }
 
@@ -614,6 +662,137 @@ func runSkillRequests(cmd *cobra.Command, args []string) error {
 			fmt.Printf("      decided by %s: %s\n", r.ResolvedBy, r.ResolutionNote)
 		}
 	}
+	return nil
+}
+
+func runSkillPending(cmd *cobra.Command, args []string) error {
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+	skills, err := client.ListPendingSkills(ctx)
+	if err != nil {
+		return fmt.Errorf("list pending skills: %w", err)
+	}
+	if len(skills) == 0 {
+		fmt.Println("Nothing is waiting for approval.")
+		return nil
+	}
+	fmt.Printf("%d skill(s) awaiting tenant-wide approval:\n\n", len(skills))
+	for _, s := range skills {
+		fmt.Printf("  %-30s v%d  %d of %d approvals\n", s.Name, s.Version, s.ApprovalsRecorded, s.ApprovalsRequired)
+		fmt.Printf("      id:     %s\n", s.SkillID)
+		fmt.Printf("      from:   %s\n", s.SharedBy)
+		// The hash is printed because it is what the decision attaches to. A
+		// reviewer approving by name alone cannot tell a superseded version from
+		// the one they read.
+		fmt.Printf("      bytes:  %s\n", s.ContentHash)
+		fmt.Println()
+	}
+	fmt.Println("Read one before deciding:  telara skill install <name> --dry-run")
+	fmt.Println("Then:                      telara skill approve <id> --version <n>")
+	return nil
+}
+
+// validateSkillDecisionFlags refuses the one combination that would decide
+// blind.
+//
+// Skipping the prompt AND omitting the version would apply the decision to
+// whatever happens to be pending at the moment the script runs. Approval
+// attaches to CONTENT, so that is not a convenience — it is a race in which an
+// author can supersede a skill between a reviewer reading it and a scheduled
+// job approving something nobody saw.
+func validateSkillDecisionFlags(version int, assumeYes bool) error {
+	if assumeYes && version <= 0 {
+		return fmt.Errorf("--yes requires --version: a decision made without a prompt must name the bytes it applies to")
+	}
+	return nil
+}
+
+// runSkillDecision records an approval or a rejection.
+//
+// The version is what the decision attaches to, so it is either given
+// explicitly or confirmed interactively against what the queue currently holds.
+// It is never silently resolved: if the author supersedes the skill between a
+// reviewer reading it and deciding, a version-less approval would land on bytes
+// nobody reviewed.
+func runSkillDecision(cmd *cobra.Command, args []string, approve bool) error {
+	skillID := args[0]
+	version, _ := cmd.Flags().GetInt("version")
+	note, _ := cmd.Flags().GetString("note")
+	assumeYes, _ := cmd.Flags().GetBool("yes")
+
+	verb := "Approve"
+	if !approve {
+		verb = "Reject"
+	}
+
+	// Checked BEFORE authenticating, so the refusal does not depend on being
+	// logged in and can be exercised without a server.
+	if err := validateSkillDecisionFlags(version, assumeYes); err != nil {
+		return err
+	}
+
+	client, err := authedClient()
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+	defer cancel()
+
+	if version <= 0 {
+		// Resolve from the queue, then SHOW what is about to be decided and ask.
+		// This is ergonomics, not a shortcut: the reviewer still sees and
+		// confirms the exact version and hash.
+		pending, lerr := client.ListPendingSkills(ctx)
+		if lerr != nil {
+			return fmt.Errorf("look up the pending version: %w", lerr)
+		}
+		var match *api.PendingSkill
+		for i := range pending {
+			if pending[i].SkillID == skillID {
+				match = &pending[i]
+				break
+			}
+		}
+		if match == nil {
+			return fmt.Errorf("%s is not awaiting approval; run `telara skill pending` to see what is", skillID)
+		}
+		fmt.Printf("%s %q v%d\n", verb, match.Name, match.Version)
+		fmt.Printf("  from:  %s\n", match.SharedBy)
+		fmt.Printf("  bytes: %s\n", match.ContentHash)
+		if approve {
+			fmt.Println("  This publishes it to everyone in the tenant.")
+		}
+		if !confirm(verb+"?", false) {
+			fmt.Println("Nothing was recorded.")
+			return nil
+		}
+		version = match.Version
+	}
+
+	result, err := client.ApproveSkill(ctx, skillID, version, approve, note)
+	if err != nil {
+		// Self-approval, a stale version and a non-tenant audience all arrive
+		// here with an actionable message from the server. Passing it through
+		// verbatim is the point — "approval refused" alone tells a reviewer
+		// nothing about which of those it was.
+		return fmt.Errorf("record decision: %w", err)
+	}
+
+	if !approve {
+		fmt.Printf("Rejected. %s keeps the skill; it simply does not reach the tenant.\n", skillID)
+		return nil
+	}
+	if result.Published {
+		fmt.Printf("Approved and PUBLISHED. %s is now loadable by everyone in the tenant.\n", skillID)
+		return nil
+	}
+	fmt.Printf("Approved (%d of %d). Still pending until quorum is met.\n",
+		result.ApprovalsRecorded, result.ApprovalsRequired)
 	return nil
 }
 
