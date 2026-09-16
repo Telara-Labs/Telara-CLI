@@ -133,7 +133,14 @@ var configShowCmd = &cobra.Command{
 		// ── Deployments ───────────────────────────────────────────
 		display.PrintSection("Deployments")
 		deployments := cfg.Deployments
-		if len(deployments) == 0 && cfg.DeploymentCount > 0 {
+		// Ask the endpoint whenever the detail carried no deployments, NOT only
+		// when it claims some exist. A zero count is exactly the broken state
+		// (TENG-2913: a Personal base created by credential attachment was never
+		// deployed), and GET /v1/cli/configs/:id/deployments is where the server
+		// backfills the missing deployment. Gating the call on the count meant
+		// show could never reach the fix and kept printing "Not deployed to any
+		// scope" for the one config that always is.
+		if len(deployments) == 0 {
 			depResp, err := client.ListDeployments(context.Background(), cfg.ID)
 			if err == nil {
 				deployments = depResp.Deployments
