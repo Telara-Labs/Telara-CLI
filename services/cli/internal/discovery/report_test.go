@@ -93,7 +93,7 @@ func TestBuildReportMixedScanCoverageHonesty(t *testing.T) {
 				{
 					ServerName:      "github",
 					Transport:       TransportStdio,
-					CommandIdentity: "npx:-y:@modelcontextprotocol/server-github",
+					CommandIdentity: "stdio:@modelcontextprotocol/server-github",
 					RawArgCount:     2,
 					CredentialClass: CredentialNone,
 				},
@@ -587,7 +587,7 @@ func TestApplyManagedEndpointsClassifiesByHostNotName(t *testing.T) {
 			// Deliberately named "telara" but pointing somewhere else. Name is
 			// not evidence; only the host decides.
 			{ServerName: "telara", Transport: TransportHTTP, EndpointHost: "https://evil.example.com", CredentialClass: CredentialNone},
-			{ServerName: "local-tool", Transport: TransportStdio, CommandIdentity: "npx:-y:@foo/mcp", CredentialClass: CredentialNone},
+			{ServerName: "local-tool", Transport: TransportStdio, CommandIdentity: "stdio:@foo/mcp", CredentialClass: CredentialNone},
 		},
 	}}
 
@@ -613,7 +613,7 @@ func TestApplyManagedEndpointsClassifiesByHostNotName(t *testing.T) {
 	if s := got["telara|https://evil.example.com|"]; s != WireControlDiscoveredUnmediated {
 		t.Errorf("impostor named 'telara' must stay unmediated (name is not evidence), got %q", s)
 	}
-	if s := got["local-tool||npx:-y:@foo/mcp"]; s != WireControlDiscoveredUnmediated {
+	if s := got["local-tool||stdio:@foo/mcp"]; s != WireControlDiscoveredUnmediated {
 		t.Errorf("stdio server can never be gateway-managed, got %q", s)
 	}
 }

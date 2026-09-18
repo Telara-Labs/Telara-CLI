@@ -525,6 +525,7 @@ func discoverServer(name string, entry map[string]interface{}) DiscoveredServer 
 	}
 	if rawURL != "" {
 		server.EndpointHost = NormalizeEndpointHost(rawURL)
+		server.EndpointIdentity = CanonicalRemoteIdentity(rawURL)
 	}
 	if command != "" {
 		server.CommandIdentity = NormalizeCommandIdentity(command, args)

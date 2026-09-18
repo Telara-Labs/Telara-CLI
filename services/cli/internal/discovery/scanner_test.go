@@ -30,7 +30,7 @@ func TestScanDiscoversStdioCommandIdentity(t *testing.T) {
 	if server.Transport != TransportStdio {
 		t.Fatalf("expected stdio transport, got %q", server.Transport)
 	}
-	if server.CommandIdentity != "npx:-y:@modelcontextprotocol/server-github" {
+	if server.CommandIdentity != "stdio:@modelcontextprotocol/server-github" {
 		t.Fatalf("unexpected command identity: %q", server.CommandIdentity)
 	}
 	if server.RawArgCount != 2 {
@@ -58,11 +58,20 @@ func TestScanRemoteEndpointHostStripsPathQueryAndUserinfo(t *testing.T) {
 	if server.EndpointHost != "https://example.com:8443" {
 		t.Fatalf("unexpected endpoint host: %q", server.EndpointHost)
 	}
+	if server.EndpointIdentity != "" {
+		t.Fatalf("secret-shaped URL must not produce endpoint identity, got %q", server.EndpointIdentity)
+	}
 	serialized := mustJSON(t, result)
 	for _, forbidden := range []string{"api_key", "sk-live-abc123", "/mcp/sse", "user:secret"} {
 		if strings.Contains(serialized, forbidden) {
 			t.Fatalf("serialized result leaked %q: %s", forbidden, serialized)
 		}
+	}
+}
+
+func TestCanonicalRemoteIdentityStripsRootTransportSuffix(t *testing.T) {
+	if got := CanonicalRemoteIdentity("https://mcp.internal.corp/sse"); got != "https://mcp.internal.corp" {
+		t.Fatalf("root transport suffix must merge: got %q", got)
 	}
 }
 

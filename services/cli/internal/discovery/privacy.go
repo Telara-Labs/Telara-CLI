@@ -102,41 +102,10 @@ func ClassifyCredential(headers map[string]string, env map[string]string) (Crede
 	return CredentialNone, ""
 }
 
-// NormalizeCommandIdentity strips filesystem paths and keeps only safe identity signals.
+// NormalizeCommandIdentity is the CLI wire form of CanonicalStdioIdentity
+// (TENG-2508). It must match knowledge-service and SCM join keys.
 func NormalizeCommandIdentity(command string, args []string) string {
-	base := commandBase(command)
-	if base == "" {
-		return ""
-	}
-	if !isPackageRunner(base) {
-		return base
-	}
-
-	parts := []string{base}
-	for i := 0; i < len(args); i++ {
-		arg := strings.TrimSpace(args[i])
-		if arg == "" || looksSensitive(arg) {
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			if strings.Contains(arg, "=") {
-				continue
-			}
-			if isRunnerFlagWithValue(arg) && i+1 < len(args) {
-				i++
-				continue
-			}
-			if isSafeRunnerFlag(arg) {
-				parts = append(parts, arg)
-			}
-			continue
-		}
-		if isSafePackageIdentity(arg) {
-			parts = append(parts, packageIdentity(arg))
-			break
-		}
-	}
-	return strings.Join(parts, ":")
+	return CanonicalStdioIdentity(command, args)
 }
 
 func isManagedPath(path string) bool {

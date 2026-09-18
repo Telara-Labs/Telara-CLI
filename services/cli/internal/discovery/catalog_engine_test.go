@@ -46,7 +46,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 				return filepath.Join(home, ".claude.json")
 			},
 			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 		{
 			name:   "claude-code project",
@@ -66,7 +66,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 				return filepath.Join(home, ".cursor", "mcp.json")
 			},
 			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 		{
 			name:   "windsurf global",
@@ -86,7 +86,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 				return filepath.Join(home, ".codex", "config.toml")
 			},
 			fixture:    "[mcp_servers.github]\ncommand = \"npx\"\nargs = [\"-y\", \"@modelcontextprotocol/server-github\"]\n",
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 		{
 			name:   "gemini global",
@@ -106,7 +106,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 				return filepath.Join(home, ".aws", "amazonq", "mcp.json")
 			},
 			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 		{
 			name:   "vscode project (provisional fallback)",
@@ -117,7 +117,7 @@ func TestParityWithHardcodedScanner(t *testing.T) {
 			},
 			// VS Code nests servers under "servers", not "mcpServers".
 			fixture:    `{"servers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 	}
 
@@ -217,7 +217,7 @@ func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
 			// Shape straight from docs.cline.bot: mcpServers keyed by server
 			// name, stdio entries carry command/args.
 			fixture:    `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`,
-			wantServer: "github", wantCmd: "npx:-y:@modelcontextprotocol/server-github",
+			wantServer: "github", wantCmd: "stdio:@modelcontextprotocol/server-github",
 		},
 		{
 			name:   "factory user level",
@@ -239,7 +239,7 @@ func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
 			},
 			// Shape from docs.factory.ai's stdio example: explicit "type": "stdio".
 			fixture:    `{"mcpServers":{"my-server":{"type":"stdio","command":"npx","args":["-y","@some/mcp-server"],"disabledTools":["unused_tool"]}}}`,
-			wantServer: "my-server", wantCmd: "npx:-y:@some/mcp-server",
+			wantServer: "my-server", wantCmd: "stdio:@some/mcp-server",
 		},
 		{
 			name:   "amp global (sourcegraph_cody.yaml)",
@@ -257,7 +257,7 @@ func TestTENG2225NewFileModeVendorsExtractRealistically(t *testing.T) {
 			// NormalizeCommandIdentity (privacy.go) stops at the first safe
 			// package identity token, so the trailing --headless flag (after
 			// the package arg) is intentionally not captured.
-			wantServer: "playwright", wantCmd: "npx:-y:@playwright/mcp@latest",
+			wantServer: "playwright", wantCmd: "stdio:@playwright/mcp",
 		},
 		{
 			name:   "amp workspace (sourcegraph_cody.yaml)",
@@ -408,8 +408,8 @@ func TestContinueDevYAMLConfigExtractsRealistically(t *testing.T) {
 	// NormalizeCommandIdentity stops at the first safe package identity
 	// token (privacy.go), so the trailing db-path arg is intentionally not
 	// captured — mirrors the amp/playwright case in the test above.
-	if sqlite.CommandIdentity != "npx:@modelcontextprotocol/server-sqlite" {
-		t.Errorf("SQLite command identity = %q, want %q", sqlite.CommandIdentity, "npx:@modelcontextprotocol/server-sqlite")
+	if sqlite.CommandIdentity != "stdio:@modelcontextprotocol/server-sqlite" {
+		t.Errorf("SQLite command identity = %q, want %q", sqlite.CommandIdentity, "stdio:@modelcontextprotocol/server-sqlite")
 	}
 
 	docs, ok := byName["Remote Docs"]

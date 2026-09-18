@@ -65,6 +65,57 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 	}
 }
 
+func TestSelectedInstallConfigPrefersExplicitThenGlobal(t *testing.T) {
+	state := &agent.WiredState{Global: &agent.WiredConfig{ConfigID: "connected-id", ConfigName: "Connected Engineering MCP"}}
+
+	got, err := selectedInstallConfigForState("Personal", state)
+	if err != nil || got != "Personal" {
+		t.Fatalf("explicit config = %q, %v; want Personal, nil", got, err)
+	}
+	got, err = selectedInstallConfigForState("", state)
+	if err != nil || got != "connected-id" {
+		t.Fatalf("global config = %q, %v; want connected-id, nil", got, err)
+	}
+	got, err = selectedInstallConfigForState("", &agent.WiredState{})
+	if err != nil || got != "" {
+		t.Fatalf("first install config = %q, %v; want empty, nil", got, err)
+	}
+}
+
+func TestInstallWritersWithConfigUsesSelectedProfileInsteadOfBaseKey(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/connected-id/deployments":
+			_, _ = w.Write([]byte(`{"deployments":[{"id":"dep-1","scope_type":"user","scope_id":"u1"}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/connected-id/keys":
+			_, _ = w.Write([]byte(`{"id":"key-1","raw_key":"telara_mcp_connected","mcp_url":"` + server.URL + `"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"telara_knowledge_search"}]}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/connected-id/keys":
+			_, _ = w.Write([]byte(`{"keys":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/base/key":
+			t.Fatal("selected profile install must not request a Personal base key")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	writer := &installTestWriter{name: "codex", path: "/tmp/config.toml"}
+	results, err := installWritersWithConfig(context.Background(), api.NewClient(server.URL, "token"), []agent.AgentWriter{writer}, &api.MCPConfig{ID: "connected-id", Name: "Connected Engineering MCP"}, agent.ScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writer.written.Headers["Authorization"] != "Bearer telara_mcp_connected" {
+		t.Fatalf("client was not wired to selected profile key: %#v", writer)
+	}
+	if len(results) != 1 || results[0].detail != "Connected Engineering MCP" {
+		t.Fatalf("unexpected results: %#v", results)
+	}
+}
+
 // TestInstallUsesExplicitMasterKeyAndReportsEachClient: a gateway too old to
 // serve the base route still gets a working install via the tenant master key.
 func TestInstallUsesExplicitMasterKeyAndReportsEachClient(t *testing.T) {

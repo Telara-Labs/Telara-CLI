@@ -90,6 +90,7 @@ type ResourceAssertion struct {
 	ServerName        string `json:"serverName"`
 	Transport         string `json:"transport"`
 	EndpointHost      string `json:"endpointHost,omitempty"`
+	EndpointIdentity  string `json:"endpointIdentity,omitempty"`
 	CommandIdentity   string `json:"commandIdentity,omitempty"`
 	ArgCount          int    `json:"argCount"`
 	CredentialClass   string `json:"credentialClass"`
@@ -261,6 +262,7 @@ func BuildReport(
 				ServerName:        server.ServerName,
 				Transport:         server.Transport,
 				EndpointHost:      server.EndpointHost,
+				EndpointIdentity:  server.EndpointIdentity,
 				CommandIdentity:   server.CommandIdentity,
 				ArgCount:          server.RawArgCount,
 				CredentialClass:   wireCredentialClass(server.CredentialClass),
