@@ -38,6 +38,36 @@ func TestParseScope_NoDefaultAndRejectsUnknown(t *testing.T) {
 	}
 }
 
+func TestParseAudience_RequiresAnExplicitWellFormedRecipient(t *testing.T) {
+	cases := []struct {
+		raw, wantType, wantID string
+		wantErr               bool
+	}{
+		{"tenant", "tenant", "", false},
+		{"team:team-1", "team", "team-1", false},
+		{"project:p-1", "project", "p-1", false},
+		{"user:u-1", "user", "u-1", false},
+		{"", "", "", true},
+		{"team", "", "", true},
+		{"tenant:all", "", "", true},
+		{"galaxy:x", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			gotType, gotID, err := ParseAudience(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected audience rejection")
+				}
+				return
+			}
+			if err != nil || gotType != tc.wantType || gotID != tc.wantID {
+				t.Fatalf("ParseAudience(%q) = (%q, %q, %v)", tc.raw, gotType, gotID, err)
+			}
+		})
+	}
+}
+
 // Open-source is the only scope that cannot be taken back: once crawled and
 // forked, "revoke" only stops Telara serving it.
 func TestScope_OnlyOpenSourceIsIrreversible(t *testing.T) {
@@ -120,7 +150,7 @@ func TestBuildRequest_AlwaysScans(t *testing.T) {
 		Body:        "key: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\n",
 		ContentHash: "sha256:deadbeef",
 	}
-	req, findings := BuildRequest(s, ScopeTeam, false)
+	req, findings := BuildRequest(s, ScopeTeam, "team", "team-1", false)
 	if len(findings) == 0 {
 		t.Fatal("BuildRequest must run the scan")
 	}
@@ -129,6 +159,9 @@ func TestBuildRequest_AlwaysScans(t *testing.T) {
 	}
 	if req.AcknowledgedRisk {
 		t.Fatal("acknowledgement must not be inferred")
+	}
+	if req.TargetScopeType != "team" || req.TargetScopeID != "team-1" {
+		t.Fatalf("audience = %q:%q", req.TargetScopeType, req.TargetScopeID)
 	}
 	// What the author was shown and accepted is a decision with an owner, and
 	// it cannot be reconstructed from logs later.
@@ -139,7 +172,7 @@ func TestBuildRequest_AlwaysScans(t *testing.T) {
 
 func TestBuildRequest_CleanSkillHasNoFindings(t *testing.T) {
 	s := Skill{Name: "clean", Body: "---\nname: clean\n---\nJust prose.\n"}
-	req, findings := BuildRequest(s, ScopeEnterprise, false)
+	req, findings := BuildRequest(s, ScopeEnterprise, "tenant", "", false)
 	if len(findings) != 0 || len(req.ScanFindings) != 0 {
 		t.Fatalf("clean skill produced findings: %+v", findings)
 	}

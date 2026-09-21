@@ -25,6 +25,45 @@ func writeSkill(t *testing.T, root, dir, content string, assets map[string]strin
 
 func skillsRoot(home string) string { return filepath.Join(home, ".claude", "skills") }
 
+func codexSkillsRoot(home string) string { return filepath.Join(home, ".codex", "skills") }
+
+func sharedSkillsRoot(home string) string { return filepath.Join(home, ".agents", "skills") }
+
+func TestScanSkills_CoversEveryKnownClientSkillRoot(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(project)
+
+	writeSkill(t, skillsRoot(home), "claude-global", "---\nname: claude-global\n---\nbody\n", nil)
+	writeSkill(t, codexSkillsRoot(home), "codex-global", "---\nname: codex-global\n---\nbody\n", nil)
+	writeSkill(t, sharedSkillsRoot(home), "shared-global", "---\nname: shared-global\n---\nbody\n", nil)
+	writeSkill(t, filepath.Join(project, ".agents", "skills"), "shared-project", "---\nname: shared-project\n---\nbody\n", nil)
+	writeSkill(t, filepath.Join(project, ".cursor", "skills"), "cursor-project", "---\nname: cursor-project\n---\nbody\n", nil)
+	// Codex ships system skills under a nested directory. They are still loaded
+	// SKILL.md packages and cannot be invisible merely because they are grouped.
+	writeSkill(t, filepath.Join(codexSkillsRoot(home), ".system"), "nested-system", "---\nname: nested-system\n---\nbody\n", nil)
+
+	got := map[string]bool{}
+	for _, result := range ScanSkills() {
+		for _, skill := range result.Skills {
+			got[result.ClientFamily+":"+result.Scope+":"+skill.SkillName] = true
+		}
+	}
+	for _, want := range []string{
+		"claude-code:global-skills:claude-global",
+		"codex:global-skills:codex-global",
+		"codex:global-shared-skills:shared-global",
+		"codex:project-shared-skills:shared-project",
+		"cursor:project-skills:cursor-project",
+		"codex:global-skills:nested-system",
+	} {
+		if !got[want] {
+			t.Errorf("missing discovered skill %q; got %v", want, got)
+		}
+	}
+}
+
 func TestScanSkills_ReadsFrontmatterAndHashesBody(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -46,7 +85,7 @@ Internal note: reach api.acme.internal for the lead list.
 
 	var global ConfigScanResult
 	for _, r := range results {
-		if r.Scope == ScopeGlobalSkills {
+		if r.ClientFamily == ClientClaudeCode && r.Scope == ScopeGlobalSkills {
 			global = r
 		}
 	}
@@ -109,7 +148,7 @@ func TestScanSkills_MissingFrontmatterFallsBackToDirectoryName(t *testing.T) {
 
 	results := ScanSkills()
 	for _, r := range results {
-		if r.Scope != ScopeGlobalSkills {
+		if r.ClientFamily != ClientClaudeCode || r.Scope != ScopeGlobalSkills {
 			continue
 		}
 		requireStatus(t, r, ScanOK)
@@ -140,6 +179,9 @@ func TestScanSkills_PathClassDistinguishesUserFromManaged(t *testing.T) {
 	writeSkill(t, filepath.Join(project, ".claude", "skills"), "repo", "---\nname: repo\n---\nbody\n", nil)
 
 	for _, r := range ScanSkills() {
+		if r.ClientFamily != ClientClaudeCode {
+			continue
+		}
 		switch r.Scope {
 		case ScopeGlobalSkills:
 			if r.PathClass != "user_global:claude_code_skills" {
@@ -185,7 +227,7 @@ func TestScanSkills_CountsAssetsAndFlagsExecutable(t *testing.T) {
 
 	results := ScanSkills()
 	for _, r := range results {
-		if r.Scope != ScopeGlobalSkills {
+		if r.ClientFamily != ClientClaudeCode || r.Scope != ScopeGlobalSkills {
 			continue
 		}
 		if len(r.Skills) != 1 {
@@ -208,7 +250,7 @@ func TestScanSkills_AbsentRootIsCompleteUnreadableIsNot(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	for _, r := range ScanSkills() {
-		if r.Scope == ScopeGlobalSkills {
+		if r.ClientFamily == ClientClaudeCode && r.Scope == ScopeGlobalSkills {
 			requireStatus(t, r, ScanFileAbsent)
 			if !AuthorizesTombstone(r.Status) {
 				t.Fatal("an absent skills root is a complete answer and must authorize tombstoning")
@@ -229,7 +271,7 @@ func TestScanSkills_AbsentRootIsCompleteUnreadableIsNot(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	for _, r := range ScanSkills() {
-		if r.Scope == ScopeGlobalSkills {
+		if r.ClientFamily == ClientClaudeCode && r.Scope == ScopeGlobalSkills {
 			requireStatus(t, r, ScanPermissionDenied)
 			if AuthorizesTombstone(r.Status) {
 				t.Fatal("an unreadable root must never authorize tombstoning")
@@ -249,7 +291,7 @@ func TestScanSkills_DirectoryWithoutSkillFileIsNotASkill(t *testing.T) {
 	}
 
 	for _, r := range ScanSkills() {
-		if r.Scope == ScopeGlobalSkills {
+		if r.ClientFamily == ClientClaudeCode && r.Scope == ScopeGlobalSkills {
 			requireStatus(t, r, ScanOK)
 			if len(r.Skills) != 0 {
 				t.Fatalf("expected no skills, got %d", len(r.Skills))

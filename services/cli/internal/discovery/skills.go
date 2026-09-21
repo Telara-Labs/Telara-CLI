@@ -76,9 +76,13 @@ type skillScanSpec struct {
 
 // allSkillSpecs returns every skill root this collector knows how to scan.
 //
-// Only claude-code defines a SKILL.md convention today. Other client families
-// are deliberately absent rather than scanned-and-empty: reporting a scope we
-// never attempt would inflate coverage with scopes that can never contribute.
+// Each entry is a direct `.<client>/skills` root, never a broad recursive
+// filesystem crawl. Every client the collector already understands gets both
+// its user-global and current-workspace root. That means a newly supported
+// client cannot silently inherit MCP discovery while its SKILL.md packages stay
+// invisible. Codex's shared .agents roots retain Codex as their consumer but
+// get their own scopes, so their tombstone authority never overlaps native
+// roots.
 func allSkillSpecs() []skillScanSpec {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -88,10 +92,29 @@ func allSkillSpecs() []skillScanSpec {
 	if err != nil {
 		cwd = ""
 	}
-	return []skillScanSpec{
-		{ClientClaudeCode, ScopeGlobalSkills, filepath.Join(home, ".claude", "skills")},
-		{ClientClaudeCode, ScopeProjectSkills, filepath.Join(cwd, ".claude", "skills")},
+	clients := []struct {
+		family string
+		dir    string
+	}{
+		{ClientClaudeCode, ".claude"},
+		{ClientCodex, ".codex"},
+		{ClientCursor, ".cursor"},
+		{ClientWindsurf, ".windsurf"},
+		{ClientVSCode, ".vscode"},
+		{ClientGemini, ".gemini"},
+		{ClientAmazonQ, ".amazonq"},
 	}
+	specs := make([]skillScanSpec, 0, len(clients)*2+2)
+	for _, client := range clients {
+		specs = append(specs,
+			skillScanSpec{client.family, ScopeGlobalSkills, filepath.Join(home, client.dir, "skills")},
+			skillScanSpec{client.family, ScopeProjectSkills, filepath.Join(cwd, client.dir, "skills")},
+		)
+	}
+	return append(specs,
+		skillScanSpec{ClientCodex, ScopeGlobalSharedSkills, filepath.Join(home, ".agents", "skills")},
+		skillScanSpec{ClientCodex, ScopeProjectSharedSkills, filepath.Join(cwd, ".agents", "skills")},
+	)
 }
 
 // SkillRoots returns the directories a skill can be installed into.
@@ -144,7 +167,7 @@ func scanSkillRoot(spec skillScanSpec) ConfigScanResult {
 		return result
 	}
 
-	entries, err := os.ReadDir(spec.path)
+	_, err := os.ReadDir(spec.path)
 	if err != nil {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -159,30 +182,31 @@ func scanSkillRoot(spec skillScanSpec) ConfigScanResult {
 		return result
 	}
 
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			names = append(names, entry.Name())
-		}
-	}
-	sort.Strings(names)
-
 	// A skill directory that cannot be read degrades this scope to PARTIAL
 	// rather than failing it: the other skills in the root were read correctly,
 	// and discarding them would lose real evidence. But PARTIAL still withholds
 	// tombstone authority, so nothing gets retired on incomplete knowledge.
 	partial := false
-	for _, name := range names {
-		skill, ok, err := readSkill(spec.path, name)
+	_ = filepath.WalkDir(spec.path, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			partial = true
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() || entry.Name() != SkillFileName {
+			return nil
+		}
+		skill, err := readSkillFile(path)
 		if err != nil {
 			partial = true
-			continue
-		}
-		if !ok {
-			continue // a directory without SKILL.md is simply not a skill
+			return nil
 		}
 		result.Skills = append(result.Skills, skill)
-	}
+		return nil
+	})
+	sort.Slice(result.Skills, func(i, j int) bool { return result.Skills[i].SkillName < result.Skills[j].SkillName })
 
 	if partial {
 		result.Status = ScanUnsupported
@@ -210,13 +234,22 @@ func readSkill(root, dirName string) (DiscoveredSkill, bool, error) {
 	if info.IsDir() {
 		return DiscoveredSkill{}, false, nil
 	}
+	skill, err := readSkillFile(skillPath)
+	return skill, true, err
+}
+
+func readSkillFile(skillPath string) (DiscoveredSkill, error) {
+	info, err := os.Stat(skillPath)
+	if err != nil {
+		return DiscoveredSkill{}, err
+	}
 	if info.Size() > maxSkillFileBytes {
-		return DiscoveredSkill{}, false, fmt.Errorf("skill %q exceeds %d bytes", dirName, maxSkillFileBytes)
+		return DiscoveredSkill{}, fmt.Errorf("skill %q exceeds %d bytes", filepath.Base(filepath.Dir(skillPath)), maxSkillFileBytes)
 	}
 
 	data, err := os.ReadFile(skillPath)
 	if err != nil {
-		return DiscoveredSkill{}, false, err
+		return DiscoveredSkill{}, err
 	}
 
 	sum := sha256.Sum256(data)
@@ -225,10 +258,10 @@ func readSkill(root, dirName string) (DiscoveredSkill, bool, error) {
 		// Fall back to the directory name. A skill with unparseable or missing
 		// frontmatter still EXISTS, and dropping it would hide precisely the
 		// malformed, hand-rolled skills most worth looking at.
-		name = dirName
+		name = filepath.Base(filepath.Dir(skillPath))
 	}
 
-	refCount, hasExec := countSkillAssets(filepath.Join(root, dirName))
+	refCount, hasExec := countSkillAssets(filepath.Dir(skillPath))
 
 	return DiscoveredSkill{
 		SkillName:           name,
@@ -236,7 +269,7 @@ func readSkill(root, dirName string) (DiscoveredSkill, bool, error) {
 		ContentHash:         "sha256:" + hex.EncodeToString(sum[:]),
 		ReferencedFileCount: refCount,
 		HasExecutable:       hasExec,
-	}, true, nil
+	}, nil
 }
 
 // parseSkillFrontmatter extracts name and description from leading YAML

@@ -125,6 +125,20 @@ func userPathClass(rel string) string {
 		// admin-deployed path — the opposite of a personally installed skill,
 		// and precisely the distinction the shadow-AI view depends on.
 		return "user_global:claude_code_skills"
+	case rel == ".codex/skills":
+		return "user_global:codex_skills"
+	case rel == ".agents/skills":
+		return "user_global:codex_shared_skills"
+	case rel == ".cursor/skills":
+		return "user_global:cursor_skills"
+	case rel == ".windsurf/skills":
+		return "user_global:windsurf_skills"
+	case rel == ".vscode/skills":
+		return "user_global:vscode_skills"
+	case rel == ".gemini/skills":
+		return "user_global:gemini_skills"
+	case rel == ".amazonq/skills":
+		return "user_global:amazon_q_skills"
 	case rel == ".cursor/mcp.json":
 		return "user_global:cursor"
 	case rel == ".codex/config.toml":
@@ -157,6 +171,13 @@ func isProjectPath(path string) bool {
 		// engineer who checks it out, so misreading it as managed_system would
 		// hide the widest-blast-radius case there is.
 		"/.claude/skills",
+		"/.codex/skills",
+		"/.agents/skills",
+		"/.cursor/skills",
+		"/.windsurf/skills",
+		"/.vscode/skills",
+		"/.gemini/skills",
+		"/.amazonq/skills",
 	}
 	for _, suffix := range projectSuffixes {
 		if strings.HasSuffix(path, suffix) {

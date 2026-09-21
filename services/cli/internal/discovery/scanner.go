@@ -26,6 +26,11 @@ const (
 	// absent skills directory license a tombstone against MCP configuration.
 	ScopeGlobalSkills  = "global-skills"
 	ScopeProjectSkills = "project-skills"
+	// Codex also loads SKILL.md packages from its shared agent-library roots.
+	// They are distinct collection boundaries: an absent shared library must
+	// never retire a skill found in Codex's own skills directory.
+	ScopeGlobalSharedSkills  = "global-shared-skills"
+	ScopeProjectSharedSkills = "project-shared-skills"
 
 	ClientClaudeCode = "claude-code"
 	ClientCursor     = "cursor"

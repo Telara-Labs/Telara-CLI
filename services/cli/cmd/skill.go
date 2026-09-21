@@ -163,8 +163,8 @@ var skillRevokeCmd = &cobra.Command{
 }
 
 func init() {
-	skillShareCmd.Flags().String("scope", "", "Who receives it: team | enterprise (required)")
-	skillShareCmd.Flags().String("audience", "", "Narrow the audience: team:<id> | user:<id>. Omitted means you alone.")
+	skillShareCmd.Flags().String("scope", "", "Legacy publication label: team | enterprise (required); --audience controls recipients.")
+	skillShareCmd.Flags().String("audience", "", "Required recipients: tenant | team:<id> | project:<id> | user:<id>.")
 	skillShareCmd.Flags().Bool("yes", false, "Skip the interactive prompt (still refuses on critical findings unless --force)")
 	skillShareCmd.Flags().Bool("force", false, "Skip the LOCAL scan check. The server re-scans and may still refuse")
 	skillShareCmd.Flags().Bool("dry-run", false, "Run the scan and print what would be sent, without sending it")
@@ -270,6 +270,7 @@ func runSkillList(cmd *cobra.Command, args []string) error {
 func runSkillShare(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	scopeRaw, _ := cmd.Flags().GetString("scope")
+	audienceRaw, _ := cmd.Flags().GetString("audience")
 	assumeYes, _ := cmd.Flags().GetBool("yes")
 	force, _ := cmd.Flags().GetBool("force")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -283,6 +284,10 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	targetScopeType, targetScopeID, err := skillshare.ParseAudience(audienceRaw)
+	if err != nil {
+		return err
+	}
 
 	root, err := localSkillsRoot()
 	if err != nil {
@@ -293,7 +298,7 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req, findings := skillshare.BuildRequest(skill, scope, false)
+	req, findings := skillshare.BuildRequest(skill, scope, targetScopeType, targetScopeID, false)
 
 	fmt.Printf("Skill:   %s\n", skill.Name)
 	if skill.Version != "" {
@@ -301,6 +306,11 @@ func runSkillShare(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("Hash:    %s\n", shortHash(skill.ContentHash))
 	fmt.Printf("Scope:   %s\n", scope)
+	if targetScopeID == "" {
+		fmt.Printf("Audience: %s\n", targetScopeType)
+	} else {
+		fmt.Printf("Audience: %s:%s\n", targetScopeType, targetScopeID)
+	}
 	fmt.Printf("Source:  %s\n\n", skill.Path)
 
 	verdict := skillshare.LocalVerdict(skill.Body)

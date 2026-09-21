@@ -18,7 +18,8 @@ import (
 // second silently inheriting the first's schedule — the scan runs daily and
 // unattended, and a share must never do that.
 
-// Scope is who a shared skill reaches. Ordered by reversibility, not by size.
+// Scope is the legacy publication label retained for wire compatibility.
+// TargetScopeType and TargetScopeID decide who may load a shared skill.
 type Scope string
 
 const (
@@ -40,11 +41,8 @@ const (
 // validator cannot drift into disagreeing about it.
 var ValidScopes = []Scope{ScopeTeam, ScopeEnterprise, ScopeOpenSource}
 
-// ParseScope validates a user-supplied scope.
-//
-// There is deliberately NO default. A skill's audience is the entire decision
-// being made here, and defaulting it — to either the narrowest or the widest —
-// makes the most consequential field in the command invisible.
+// ParseScope validates the legacy publication label. Audience validation is
+// separate and mandatory in ParseAudience.
 func ParseScope(raw string) (Scope, error) {
 	s := Scope(strings.ToLower(strings.TrimSpace(raw)))
 	for _, v := range ValidScopes {
@@ -87,6 +85,34 @@ type ShareRequest struct {
 	AssetCount       int       `json:"assetCount"`
 	ScanFindings     []Finding `json:"scanFindings,omitempty"`
 	AcknowledgedRisk bool      `json:"acknowledgedRisk"`
+	// TargetScopeType and TargetScopeID name who may load the skill. Scope is a
+	// legacy publication label; audience is the disclosure decision and is
+	// therefore never inferred for a new share.
+	TargetScopeType string `json:"targetScopeType"`
+	TargetScopeID   string `json:"targetScopeId,omitempty"`
+}
+
+// ParseAudience parses the explicit recipient form accepted by `telara skill
+// share`: tenant, or team|project|user:<id>. It deliberately has no default:
+// publishing instruction text without naming who receives it is not a safe
+// shorthand.
+func ParseAudience(raw string) (targetType, targetID string, err error) {
+	audience := strings.TrimSpace(raw)
+	if audience == "tenant" {
+		return "tenant", "", nil
+	}
+	targetType, targetID, found := strings.Cut(audience, ":")
+	targetType = strings.ToLower(strings.TrimSpace(targetType))
+	targetID = strings.TrimSpace(targetID)
+	if !found || targetID == "" {
+		return "", "", fmt.Errorf("--audience is required: tenant | team:<id> | project:<id> | user:<id>")
+	}
+	switch targetType {
+	case "team", "project", "user":
+		return targetType, targetID, nil
+	default:
+		return "", "", fmt.Errorf("invalid audience %q (want tenant | team:<id> | project:<id> | user:<id>)", raw)
+	}
 }
 
 // LoadSkill reads one skill from a skills root for sharing.
@@ -139,7 +165,7 @@ func LoadSkill(root, name string) (Skill, error) {
 //
 // BuildRequest never decides on the caller's behalf: an automatic redaction that
 // guessed wrong would ship a broken skill AND imply the body was reviewed.
-func BuildRequest(s Skill, scope Scope, acknowledged bool) (ShareRequest, []Finding) {
+func BuildRequest(s Skill, scope Scope, targetScopeType, targetScopeID string, acknowledged bool) (ShareRequest, []Finding) {
 	findings := Scan(s.Body)
 	return ShareRequest{
 		SkillName:        s.Name,
@@ -151,6 +177,8 @@ func BuildRequest(s Skill, scope Scope, acknowledged bool) (ShareRequest, []Find
 		AssetCount:       s.AssetCount,
 		ScanFindings:     findings,
 		AcknowledgedRisk: acknowledged,
+		TargetScopeType:  targetScopeType,
+		TargetScopeID:    targetScopeID,
 	}, findings
 }
 
