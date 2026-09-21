@@ -22,6 +22,7 @@ package skillshare
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,34 +89,42 @@ func Enforce(homeDir string, denied []DeniedSkill) ([]QuarantineAction, error) {
 	// entry names a HASH, never a path, so nothing the server sends can steer
 	// this somewhere else.
 	for _, root := range discovery.SkillRoots() {
-		entries, err := os.ReadDir(root)
-		if err != nil {
+		if _, err := os.Stat(root); err != nil {
 			// An absent root is the ordinary case on most machines.
 			continue
 		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
+		walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				failures = append(failures, walkErr.Error())
+				if entry != nil && entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
 			}
-			hash, ok := installedSkillHash(root, e.Name())
-			if !ok {
-				continue
+			if entry.IsDir() || entry.Name() != discovery.SkillFileName {
+				return nil
 			}
-			denial, denied := byHash[hash]
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				failures = append(failures, err.Error())
+				return nil
+			}
+			denial, denied := byHash[ContentHash(string(raw))]
 			if !denied {
-				continue
+				return nil
 			}
-			action, qerr := quarantineOne(homeDir, root, e.Name(), denial)
+			action, qerr := quarantineSkillDir(homeDir, root, filepath.Dir(path), denial)
 			if qerr != nil {
-				// One skill failing must not stop the others: a machine with two
-				// withdrawn skills should not keep the second because the first
-				// hit a permissions problem.
 				failures = append(failures, qerr.Error())
-				continue
+				return nil
 			}
 			if action != nil {
 				actions = append(actions, *action)
 			}
+			return fs.SkipDir
+		})
+		if walkErr != nil {
+			failures = append(failures, walkErr.Error())
 		}
 	}
 	if len(failures) > 0 {
@@ -146,7 +155,21 @@ func quarantineOne(homeDir, root, name string, entry DeniedSkill) (*QuarantineAc
 	if name != filepath.Base(name) || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
 		return nil, fmt.Errorf("refusing to quarantine unsafe skill name %q", name)
 	}
-	from := filepath.Join(root, name)
+	return quarantineSkillDir(homeDir, root, filepath.Join(root, name), entry)
+}
+
+// quarantineSkillDir moves a discovered skill directory, including a nested
+// package such as .codex/skills/.system/imagegen. The path is always derived
+// from the local filesystem walk, never supplied by the server.
+func quarantineSkillDir(homeDir, root, from string, entry DeniedSkill) (*QuarantineAction, error) {
+	name := filepath.Base(from)
+	if name == "." || name == string(filepath.Separator) || strings.HasPrefix(name, ".") {
+		return nil, fmt.Errorf("refusing to quarantine unsafe skill path %q", from)
+	}
+	rel, err := filepath.Rel(root, from)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return nil, fmt.Errorf("refusing to quarantine %q outside %s", from, root)
+	}
 
 	// Confirm the directory really sits under the root we enumerated. A symlink
 	// pointing elsewhere must not turn enforcement into a way to move arbitrary

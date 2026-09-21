@@ -240,6 +240,63 @@ func TestBuildReportInstanceSeparationSameServerTwoScopes(t *testing.T) {
 	}
 }
 
+func TestBuildReportWithholdsCredentialShapedSkillMetadataWithoutDroppingSkill(t *testing.T) {
+	results := []ConfigScanResult{{
+		ClientFamily: "codex",
+		Scope:        ScopeProjectSharedSkills,
+		PathClass:    "project_local",
+		Status:       ScanOK,
+		Skills: []DiscoveredSkill{{
+			SkillName:   "sk-accidental-name",
+			Description: "Use this only with sk- shaped example values.",
+			ContentHash: "sha256:0123456789abcdef",
+		}},
+	}}
+
+	report := BuildReport(testCollector(), "scan-sensitive-skill", fixedStarted, fixedCompleted, results)
+	if len(report.ResourceAssertions) != 1 {
+		t.Fatalf("expected the skill assertion to survive metadata redaction, got %d", len(report.ResourceAssertions))
+	}
+	assertion := report.ResourceAssertions[0]
+	if assertion.SkillDescription != "" {
+		t.Fatalf("credential-shaped description leaked into report: %q", assertion.SkillDescription)
+	}
+	if assertion.ServerName != "redacted-skill-0123456789ab" {
+		t.Fatalf("server name = %q, want deterministic redacted alias", assertion.ServerName)
+	}
+	if assertion.SourceAssertionID != "codex:project-shared-skills|redacted-skill-0123456789ab" {
+		t.Fatalf("source assertion identity retained raw name: %q", assertion.SourceAssertionID)
+	}
+	if assertion.ContentHash != "sha256:0123456789abcdef" {
+		t.Fatalf("content hash was lost with optional metadata: %q", assertion.ContentHash)
+	}
+}
+
+func TestBuildReportDistinguishesSameNamedPackagesWithinOneRoot(t *testing.T) {
+	results := []ConfigScanResult{{
+		ClientFamily: "codex",
+		Scope:        ScopeGlobalSkills,
+		PathClass:    "user_global",
+		Status:       ScanOK,
+		Skills: []DiscoveredSkill{
+			{SkillName: "duplicate", ContentHash: "sha256:same", SourceLocationKey: "location-a"},
+			{SkillName: "duplicate", ContentHash: "sha256:same", SourceLocationKey: "location-b"},
+		},
+	}}
+
+	report := BuildReport(testCollector(), "scan-duplicate-skill", fixedStarted, fixedCompleted, results)
+	if len(report.ResourceAssertions) != 2 {
+		t.Fatalf("same-named packages collapsed to %d assertions", len(report.ResourceAssertions))
+	}
+	ids := map[string]bool{}
+	for _, assertion := range report.ResourceAssertions {
+		ids[assertion.SourceAssertionID] = true
+	}
+	if !ids["codex:global-skills|duplicate|location-a"] || !ids["codex:global-skills|duplicate|location-b"] {
+		t.Fatalf("missing distinct opaque source identities: %+v", report.ResourceAssertions)
+	}
+}
+
 func TestBuildReportDeterministicUnderInputReorder(t *testing.T) {
 	base := []ConfigScanResult{
 		{

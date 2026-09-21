@@ -65,6 +65,11 @@ type DiscoveredSkill struct {
 	ReferencedFileCount int `json:"referencedFileCount"`
 	// HasExecutable records whether any sibling file carries an executable bit.
 	HasExecutable bool `json:"hasExecutable"`
+	// SourceLocationKey is an opaque, root-relative package identity used only
+	// to keep two independently installed packages with the same frontmatter
+	// name from collapsing into one estate assertion. It is never serialized:
+	// an employee's directory layout is not estate inventory.
+	SourceLocationKey string `json:"-"`
 }
 
 // skillScanSpec is one directory root to search for skills.
@@ -203,6 +208,7 @@ func scanSkillRoot(spec skillScanSpec) ConfigScanResult {
 			partial = true
 			return nil
 		}
+		skill.SourceLocationKey = opaqueSkillLocationKey(spec.path, filepath.Dir(path))
 		result.Skills = append(result.Skills, skill)
 		return nil
 	})
@@ -215,6 +221,18 @@ func scanSkillRoot(spec skillScanSpec) ConfigScanResult {
 	}
 	result.Status = ScanOK
 	return result
+}
+
+func opaqueSkillLocationKey(root, skillDir string) string {
+	relative, err := filepath.Rel(root, skillDir)
+	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || relative == ".." {
+		// This is local discovery, so an impossible relative path must not become
+		// a raw-path fallback in the report. The caller still reports the skill
+		// by content/name, but an empty key makes the anomaly visible to tests.
+		return ""
+	}
+	sum := sha256.Sum256([]byte("telara-skill-location/v1\x00" + filepath.ToSlash(relative)))
+	return hex.EncodeToString(sum[:12])
 }
 
 // readSkill reads one skill directory. It returns ok=false when the directory

@@ -3,6 +3,7 @@ package discovery
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -221,6 +222,16 @@ func BuildReport(
 		}
 
 		for _, skill := range result.Skills {
+			// Skill metadata comes from untrusted local instruction text. Keep the
+			// report useful without letting a phrase such as "sk-..." in a
+			// frontmatter description make the server reject the whole machine's
+			// inventory. The server remains fail-closed for any unsafe value that
+			// reaches it; the collector withholds the optional description first.
+			//
+			// The same applies to a hand-authored directory name. A stable hash
+			// derived alias preserves one skill assertion without exporting a
+			// potentially secret-bearing name or using it in sourceAssertionId.
+			skillName := safeSkillReportName(skill.SkillName, skill.ContentHash)
 			report.ResourceAssertions = append(report.ResourceAssertions, ResourceAssertion{
 				SourceScope: scopeKey,
 				// Same instance-level identity rule as MCP configuration: two
@@ -228,16 +239,16 @@ func BuildReport(
 				// deduplicated logical skill is derivable from ContentHash, so
 				// both units of accounting remain available without collapsing
 				// per-person attribution here.
-				SourceAssertionID: fmt.Sprintf("%s|%s", scopeKey, skill.SkillName),
+				SourceAssertionID: skillSourceAssertionID(scopeKey, skillName, skill.SourceLocationKey),
 				ProviderNamespace: result.ClientFamily,
 				ResourceKind:      ResourceKindAgentSkill,
-				ServerName:        skill.SkillName,
+				ServerName:        skillName,
 				// A skill is loaded from local disk by the agent itself. It has
 				// no transport and no endpoint, and saying "unknown" would
 				// imply a network path we failed to classify.
 				Transport:           TransportStdio,
 				CredentialClass:     WireCredentialNone,
-				SkillDescription:    skill.Description,
+				SkillDescription:    safeSkillReportDescription(skill.Description),
 				ContentHash:         skill.ContentHash,
 				ReferencedFileCount: skill.ReferencedFileCount,
 				HasExecutable:       skill.HasExecutable,
@@ -289,6 +300,61 @@ func BuildReport(
 	})
 
 	return report
+}
+
+// safeSkillReportDescription excludes optional prose that the service's
+// defense-in-depth scanner would (correctly) refuse as credential-shaped. A
+// report still contains the skill's hash and structure signals, so withholding
+// a description never hides the existence of an installed skill.
+func safeSkillReportDescription(description string) string {
+	if aiEstateReportValueLooksSensitive(description) {
+		return ""
+	}
+	return description
+}
+
+// safeSkillReportName keeps a hostile or accidentally secret-bearing directory
+// name out of both the displayed property and the durable assertion identity.
+// Hashes are already the logical-skill identity, so a deterministic alias does
+// not merge distinct installed copies.
+func safeSkillReportName(name, contentHash string) string {
+	if !aiEstateReportValueLooksSensitive(name) {
+		return name
+	}
+	const prefix = "sha256:"
+	hash := strings.TrimPrefix(contentHash, prefix)
+	if len(hash) > 12 {
+		hash = hash[:12]
+	}
+	if hash == "" {
+		return "redacted-skill"
+	}
+	return "redacted-skill-" + hash
+}
+
+func skillSourceAssertionID(scopeKey, skillName, sourceLocationKey string) string {
+	if sourceLocationKey == "" {
+		// Compatibility for callers that construct DiscoveredSkill directly. The
+		// filesystem scanner always sets the location key before it reaches this
+		// path; a missing key must not fabricate a path-like value.
+		return fmt.Sprintf("%s|%s", scopeKey, skillName)
+	}
+	return fmt.Sprintf("%s|%s|%s", scopeKey, skillName, sourceLocationKey)
+}
+
+// Keep this conservative client-side predicate aligned with knowledge-service
+// aiEstateLooksSensitive. It is not the authority: the service checks again.
+func aiEstateReportValueLooksSensitive(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	for _, marker := range []string{
+		"bearer ", "basic ", "token=", "secret=", "password=", "apikey=", "api_key=",
+		"private_key", "-----begin ", "xoxb-", "xoxp-", "sk-", "ghp_", "github_pat_", "authorization:",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // CoverageSummary is what the /ai-estate coverage rail needs in order to state

@@ -141,6 +141,27 @@ func TestEnforceMatchesOnContentHashNotName(t *testing.T) {
 	}
 }
 
+func TestEnforceQuarantinesNestedSkillPackages(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".codex", "skills")
+	hash := installSkill(t, root, ".system/nested-skill", quarantineBody)
+	t.Setenv("HOME", home)
+
+	actions, err := Enforce(home, []DeniedSkill{{ContentHash: hash, SkillName: "nested-skill"}})
+	if err != nil {
+		t.Fatalf("enforce nested skill: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("expected nested skill to move once, got %d: %+v", len(actions), actions)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".system", "nested-skill", "SKILL.md")); !os.IsNotExist(err) {
+		t.Errorf("nested skill remained in its load path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(actions[0].To, "SKILL.md")); err != nil {
+		t.Errorf("nested skill was not preserved in quarantine: %v", err)
+	}
+}
+
 // An empty deny list must do nothing at all, without walking anything.
 func TestEnforceIsANoOpWithNothingDenied(t *testing.T) {
 	home := t.TempDir()
