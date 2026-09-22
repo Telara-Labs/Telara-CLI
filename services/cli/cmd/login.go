@@ -302,7 +302,7 @@ func recordWiredGlobal(binding onboardingBinding) {
 	if binding.ConfigID == "" {
 		return
 	}
-	if binding.IsBase {
+	if binding.IsDefaultBinding {
 		_ = agent.SaveWiredGlobalDefault(binding.ConfigID, binding.ConfigName)
 		return
 	}

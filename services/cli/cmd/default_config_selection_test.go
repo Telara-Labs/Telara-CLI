@@ -26,14 +26,14 @@ func isolateConfigHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
 }
 
-func TestRecordWiredGlobalMarksABaseBindingAsTheDefault(t *testing.T) {
+func TestRecordWiredGlobalMarksTheServerChosenBindingAsTheDefault(t *testing.T) {
 	isolateConfigHome(t)
 
 	recordWiredGlobal(onboardingBinding{
-		RawKey:     "telara_mcp_base",
-		ConfigID:   "4e0acd6f-eb68-483e-a64c-e67490302aa1",
-		ConfigName: "Personal (034c5aa3-d3d0-476b-8fe3-1ea1fa93ae06)",
-		IsBase:     true,
+		RawKey:           "telara_mcp_base",
+		ConfigID:         "4e0acd6f-eb68-483e-a64c-e67490302aa1",
+		ConfigName:       "Personal (034c5aa3-d3d0-476b-8fe3-1ea1fa93ae06)",
+		IsDefaultBinding: true,
 	})
 
 	state, err := agent.LoadWiredState()
@@ -47,7 +47,7 @@ func TestRecordWiredGlobalMarksABaseBindingAsTheDefault(t *testing.T) {
 		t.Fatalf("recorded the wrong config id: %q", state.Global.ConfigID)
 	}
 	if !state.Global.IsDefault() {
-		t.Fatal("a base binding must be recorded as the user's default, not as a choice they made")
+		t.Fatal("a server-chosen binding must be recorded as the default, not as a choice the user made")
 	}
 }
 
@@ -58,10 +58,10 @@ func TestRecordWiredGlobalNeverMarksADowngradeAsTheDefault(t *testing.T) {
 	isolateConfigHome(t)
 
 	recordWiredGlobal(onboardingBinding{
-		RawKey:     "telara_mcp_fallback",
-		ConfigID:   "11111111-2222-3333-4444-555555555555",
-		ConfigName: "Ready",
-		IsBase:     false,
+		RawKey:           "telara_mcp_fallback",
+		ConfigID:         "11111111-2222-3333-4444-555555555555",
+		ConfigName:       "Ready",
+		IsDefaultBinding: false,
 	})
 
 	state, err := agent.LoadWiredState()
@@ -99,7 +99,7 @@ func TestExplicitSelectionOverwritesTheAutoSelectedDefault(t *testing.T) {
 	isolateConfigHome(t)
 
 	recordWiredGlobal(onboardingBinding{
-		ConfigID: "4e0acd6f-eb68-483e-a64c-e67490302aa1", ConfigName: "Personal", IsBase: true,
+		ConfigID: "4e0acd6f-eb68-483e-a64c-e67490302aa1", ConfigName: "Personal", IsDefaultBinding: true,
 	})
 	if err := agent.SaveWiredGlobal("9f8e7d6c-0000-1111-2222-333344445555", "Connected Engineering MCP"); err != nil {
 		t.Fatal(err)
@@ -149,10 +149,14 @@ func TestInstallReusesTheRecordedDefault(t *testing.T) {
 	}
 }
 
-// The base is identified by the id the server returns, never by its display
-// name. The name embeds the USER's uuid, so neither the literal string
+// The configuration is identified by the id the server returns, never by its
+// display name. The name embeds the USER's uuid, so neither the literal string
 // "Personal" nor the uuid inside the name identifies the configuration.
-func TestOnboardingCredentialCarriesTheBaseConfigIdentity(t *testing.T) {
+//
+// Note what this does NOT assert: that the returned config is the is_base one.
+// The base-key route only checks that resolution returned a user-scoped config
+// (TENG-3023), so the CLI records "what the server bound me to", not "my base".
+func TestOnboardingCredentialCarriesTheConfigIdentity(t *testing.T) {
 	const (
 		wantConfigID = "4e0acd6f-eb68-483e-a64c-e67490302aa1"
 		displayName  = "Personal (034c5aa3-d3d0-476b-8fe3-1ea1fa93ae06)"
@@ -176,8 +180,8 @@ func TestOnboardingCredentialCarriesTheBaseConfigIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !binding.IsBase {
-		t.Fatal("the base-key route returns the user's own base; it must be marked as such")
+	if !binding.IsDefaultBinding {
+		t.Fatal("a successful base-key response is the server-chosen default binding")
 	}
 	if binding.ConfigID != wantConfigID {
 		t.Fatalf("config id should come from the server, got %q", binding.ConfigID)

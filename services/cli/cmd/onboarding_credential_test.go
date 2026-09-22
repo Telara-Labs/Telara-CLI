@@ -144,7 +144,7 @@ func TestOnboardingCredentialMasterFallbackWarns(t *testing.T) {
 	if binding.RawKey != "telara_mcp_master" || binding.MCPURL != "https://api.telara.dev/v1/mcp" || binding.ConfigName != "Master" {
 		t.Fatalf("unexpected master fallback result: %q %q %q", binding.RawKey, binding.MCPURL, binding.ConfigName)
 	}
-	if binding.IsBase {
+	if binding.IsDefaultBinding {
 		t.Fatal("the tenant master downgrade must not be reported as the user's base")
 	}
 	if binding.ConfigID != "" {

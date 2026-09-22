@@ -205,7 +205,7 @@ func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T)
 	if binding.RawKey != "telara_mcp_fallback" || binding.MCPURL != "https://api.telara.dev/v1/mcp" || binding.ConfigName != "Ready" {
 		t.Fatalf("unexpected fallback: %q %q %q", binding.RawKey, binding.MCPURL, binding.ConfigName)
 	}
-	if binding.IsBase {
+	if binding.IsDefaultBinding {
 		t.Fatal("a deployed-config fallback must not be reported as the user's base")
 	}
 }

@@ -46,22 +46,32 @@ func credentialFallbackPermitted(err error) bool {
 // onboardingBinding is the credential a client is wired with, together with the
 // identity of the configuration it belongs to.
 //
-// The ConfigID is what makes auto-selection safe (TENG-3017). The base is
-// identified by the id the server returns from the base-key route, never by its
-// display name: that name embeds the user's uuid rather than the config's
-// (agent-service scopeBaseName), so matching on the string "Personal" would
-// match nothing, and matching the uuid inside it would match the wrong thing.
+// The ConfigID is what makes auto-selection safe (TENG-3017): the configuration
+// is identified by the id the server returns, never by its display name. That
+// name embeds the user's uuid rather than the config's (agent-service
+// scopeBaseName), so matching the string "Personal" matches nothing and matching
+// the uuid inside the name resolves to a different object entirely.
 type onboardingBinding struct {
 	RawKey     string
 	MCPURL     string
 	ConfigID   string
 	ConfigName string
-	// IsBase reports whether this credential is bound to the user's own
-	// always-on base configuration rather than to one of the downgrade
-	// fallbacks below. Only a base binding may be recorded as the user's
-	// default: recording a tenant-master downgrade as "your default" would
-	// present the widest credential in the tenant as a personal baseline.
-	IsBase bool
+	// IsDefaultBinding reports that the server chose this configuration for a
+	// caller who named none — the binding a connection gets by default. It is
+	// deliberately NOT called "is base": the base-key route is documented as
+	// returning the caller's own base, but it returns whatever
+	// ResolveMCPConfiguration selects and only checks that the result is
+	// user-scoped. Resolution prefers any config with a user-scope default
+	// deployment over the always-on base (agent-service
+	// deployments.go ResolveConfiguration, step 1 before step 1b), so a user
+	// who has one is bound to that instead, and the route reports it as their
+	// base. Claiming "this is your Personal base" from this response would be
+	// claiming something the server does not actually check (TENG-3023).
+	//
+	// False for the downgrade fallbacks, which must never be recorded as a
+	// default: presenting the tenant master — the union of every policy in the
+	// tenant — as a personal baseline is the exact inversion this avoids.
+	IsDefaultBinding bool
 }
 
 // onboardingCredential obtains the user-bound credential used by both login
@@ -79,11 +89,11 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 	base, baseErr := client.IssueBaseKey(ctx, keyName)
 	if baseErr == nil {
 		return onboardingBinding{
-			RawKey:     base.BaseKey,
-			MCPURL:     base.MCPURL,
-			ConfigID:   base.MCPConfigID,
-			ConfigName: base.ConfigName,
-			IsBase:     true,
+			RawKey:           base.BaseKey,
+			MCPURL:           base.MCPURL,
+			ConfigID:         base.MCPConfigID,
+			ConfigName:       base.ConfigName,
+			IsDefaultBinding: true,
 		}, nil
 	}
 	if !credentialFallbackPermitted(baseErr) {
