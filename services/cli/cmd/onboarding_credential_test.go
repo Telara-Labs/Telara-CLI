@@ -76,7 +76,7 @@ func TestOnboardingCredentialTransientBaseErrorFails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, _, _, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
+	_, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
 	if err == nil {
 		t.Fatal("expected a transient base-key error to fail, got success")
 	}
@@ -108,7 +108,7 @@ func TestOnboardingCredentialTransientMasterErrorFails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, _, _, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
+	_, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
 	if err == nil {
 		t.Fatal("expected a transient master-key error to fail, got success")
 	}
@@ -137,12 +137,18 @@ func TestOnboardingCredentialMasterFallbackWarns(t *testing.T) {
 	}))
 	defer server.Close()
 
-	key, endpoint, name, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
+	binding, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key != "telara_mcp_master" || endpoint != "https://api.telara.dev/v1/mcp" || name != "Master" {
-		t.Fatalf("unexpected master fallback result: %q %q %q", key, endpoint, name)
+	if binding.RawKey != "telara_mcp_master" || binding.MCPURL != "https://api.telara.dev/v1/mcp" || binding.ConfigName != "Master" {
+		t.Fatalf("unexpected master fallback result: %q %q %q", binding.RawKey, binding.MCPURL, binding.ConfigName)
+	}
+	if binding.IsBase {
+		t.Fatal("the tenant master downgrade must not be reported as the user's base")
+	}
+	if binding.ConfigID != "" {
+		t.Fatalf("the tenant master has no per-config identity, got %q", binding.ConfigID)
 	}
 
 	out := warnings.String()
@@ -183,12 +189,12 @@ func TestOnboardingCredentialAnyConfigFallbackWarns(t *testing.T) {
 	}))
 	defer server.Close()
 
-	key, _, name, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
+	binding, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key != "telara_mcp_fallback" || name != "Ready" {
-		t.Fatalf("unexpected fallback result: %q %q", key, name)
+	if binding.RawKey != "telara_mcp_fallback" || binding.ConfigName != "Ready" {
+		t.Fatalf("unexpected fallback result: %q %q", binding.RawKey, binding.ConfigName)
 	}
 
 	out := warnings.String()

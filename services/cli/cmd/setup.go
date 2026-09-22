@@ -75,6 +75,18 @@ func selectConfigInteractive(client *api.Client) (*api.MCPConfig, error) {
 		Message: "Select MCP configuration:",
 		Options: options,
 	}
+	// Start the cursor on whatever the global layer is already bound to —
+	// which, for a user who has never chosen, is their own base config
+	// (TENG-3017). Matched by config id: the base's display name embeds the
+	// user's uuid, so no name comparison can identify it reliably.
+	if state, err := agent.LoadWiredState(); err == nil && state.Global != nil {
+		for i := range resp.Configs {
+			if resp.Configs[i].ID != "" && resp.Configs[i].ID == state.Global.ConfigID {
+				prompt.Default = options[i]
+				break
+			}
+		}
+	}
 	if err := survey.AskOne(prompt, &chosen); err != nil {
 		return nil, fmt.Errorf("selection cancelled: %w", err)
 	}

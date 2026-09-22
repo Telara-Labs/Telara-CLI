@@ -312,6 +312,7 @@ func runConfigStatus() error {
 		scope      agent.Scope
 		found      bool
 		configName string
+		isDefault  bool
 	}
 	layers := []layerInfo{
 		{name: "Managed", scope: agent.ScopeManaged},
@@ -337,6 +338,7 @@ func runConfigStatus() error {
 		for i := range layers {
 			if layers[i].scope == agent.ScopeGlobal && layers[i].found {
 				layers[i].configName = wiredState.Global.ConfigName
+				layers[i].isDefault = wiredState.Global.IsDefault()
 			}
 		}
 	}
@@ -357,9 +359,16 @@ func runConfigStatus() error {
 	for _, l := range layers {
 		if l.found {
 			if l.configName != "" {
-				fmt.Fprintf(w, "  %-12s %s  %s\n", l.name+":",
+				// Say when the layer is the base the CLI fell back to rather
+				// than something the user picked, so "not configured" and
+				// "defaulted to your base" stop looking identical (TENG-3017).
+				suffix := ""
+				if l.isDefault {
+					suffix = "  " + display.ColorDim.Sprint("(default)")
+				}
+				fmt.Fprintf(w, "  %-12s %s  %s%s\n", l.name+":",
 					display.ColorSuccess.Sprint("✓"),
-					display.ColorBold.Sprint(l.configName))
+					display.ColorBold.Sprint(l.configName), suffix)
 			} else {
 				fmt.Fprintf(w, "  %-12s %s\n", l.name+":", display.ColorSuccess.Sprint("✓  connected"))
 			}

@@ -198,11 +198,14 @@ func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T)
 	}))
 	defer server.Close()
 
-	key, endpoint, name, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
+	binding, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key != "telara_mcp_fallback" || endpoint != "https://api.telara.dev/v1/mcp" || name != "Ready" {
-		t.Fatalf("unexpected fallback: %q %q %q", key, endpoint, name)
+	if binding.RawKey != "telara_mcp_fallback" || binding.MCPURL != "https://api.telara.dev/v1/mcp" || binding.ConfigName != "Ready" {
+		t.Fatalf("unexpected fallback: %q %q %q", binding.RawKey, binding.MCPURL, binding.ConfigName)
+	}
+	if binding.IsBase {
+		t.Fatal("a deployed-config fallback must not be reported as the user's base")
 	}
 }

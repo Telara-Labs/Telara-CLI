@@ -43,6 +43,27 @@ func credentialFallbackPermitted(err error) bool {
 	}
 }
 
+// onboardingBinding is the credential a client is wired with, together with the
+// identity of the configuration it belongs to.
+//
+// The ConfigID is what makes auto-selection safe (TENG-3017). The base is
+// identified by the id the server returns from the base-key route, never by its
+// display name: that name embeds the user's uuid rather than the config's
+// (agent-service scopeBaseName), so matching on the string "Personal" would
+// match nothing, and matching the uuid inside it would match the wrong thing.
+type onboardingBinding struct {
+	RawKey     string
+	MCPURL     string
+	ConfigID   string
+	ConfigName string
+	// IsBase reports whether this credential is bound to the user's own
+	// always-on base configuration rather than to one of the downgrade
+	// fallbacks below. Only a base binding may be recorded as the user's
+	// default: recording a tenant-master downgrade as "your default" would
+	// present the widest credential in the tenant as a personal baseline.
+	IsBase bool
+}
+
 // onboardingCredential obtains the user-bound credential used by both login
 // auto-wiring and the explicit installer. Keeping this in one place prevents
 // the two entry points from silently drifting back to different key lifecycles.
@@ -54,15 +75,21 @@ func credentialFallbackPermitted(err error) bool {
 // a definitive "not available" (see credentialFallbackPermitted), and never
 // silently: every downgrade prints an unmissable warning naming the broader
 // credential the session is now bound to and the concrete error that caused it.
-func onboardingCredential(ctx context.Context, client *api.Client, keyName string) (rawKey, mcpURL, configName string, err error) {
+func onboardingCredential(ctx context.Context, client *api.Client, keyName string) (onboardingBinding, error) {
 	base, baseErr := client.IssueBaseKey(ctx, keyName)
 	if baseErr == nil {
-		return base.BaseKey, base.MCPURL, base.ConfigName, nil
+		return onboardingBinding{
+			RawKey:     base.BaseKey,
+			MCPURL:     base.MCPURL,
+			ConfigID:   base.MCPConfigID,
+			ConfigName: base.ConfigName,
+			IsBase:     true,
+		}, nil
 	}
 	if !credentialFallbackPermitted(baseErr) {
 		// Transient or ambiguous failure: fail with the base-key error instead
 		// of silently binding the session to the tenant master.
-		return "", "", "", fmt.Errorf("issue base configuration key: %w", baseErr)
+		return onboardingBinding{}, fmt.Errorf("issue base configuration key: %w", baseErr)
 	}
 
 	master, masterErr := client.IssueMasterKey(ctx, keyName)
@@ -72,10 +99,10 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 				"         now bound to the tenant MASTER configuration — the union of every\n"+
 				"         policy in the tenant, not your personal least-privilege base.\n"+
 				"         Base key error: %v\n\n", baseErr)
-		return master.MasterKey, master.MCPURL, "Master", nil
+		return onboardingBinding{RawKey: master.MasterKey, MCPURL: master.MCPURL, ConfigName: "Master"}, nil
 	}
 	if !credentialFallbackPermitted(masterErr) {
-		return "", "", "", fmt.Errorf("issue tenant master key (base key unavailable: %v): %w", baseErr, masterErr)
+		return onboardingBinding{}, fmt.Errorf("issue tenant master key (base key unavailable: %v): %w", baseErr, masterErr)
 	}
 
 	// Not every existing tenant has a usable master configuration yet. Fall
@@ -83,11 +110,11 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 	// concrete error if no path can supply a credential.
 	resolved, resolveErr := client.ResolveConfigs(ctx)
 	if resolveErr != nil {
-		return "", "", "", fmt.Errorf("issue tenant master key (%v); resolve fallback configuration: %w", masterErr, resolveErr)
+		return onboardingBinding{}, fmt.Errorf("issue tenant master key (%v); resolve fallback configuration: %w", masterErr, resolveErr)
 	}
 	candidates := append(resolved.Managed, resolved.Available...)
 	if len(candidates) == 0 {
-		return "", "", "", fmt.Errorf("issue tenant master key (%v); no fallback MCP configuration is available", masterErr)
+		return onboardingBinding{}, fmt.Errorf("issue tenant master key (%v); no fallback MCP configuration is available", masterErr)
 	}
 	var lastErr error
 	for _, cfg := range candidates {
@@ -127,7 +154,7 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 				"         %q rather than your personal least-privilege base.\n"+
 				"         Base key error:   %v\n"+
 				"         Master key error: %v\n\n", cfg.Name, baseErr, masterErr)
-		return key.RawKey, key.MCPURL, cfg.Name, nil
+		return onboardingBinding{RawKey: key.RawKey, MCPURL: key.MCPURL, ConfigID: cfg.ID, ConfigName: cfg.Name}, nil
 	}
-	return "", "", "", fmt.Errorf("issue tenant master key (%v); no usable fallback configuration: %w", masterErr, lastErr)
+	return onboardingBinding{}, fmt.Errorf("issue tenant master key (%v); no usable fallback configuration: %w", masterErr, lastErr)
 }

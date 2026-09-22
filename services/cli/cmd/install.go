@@ -197,12 +197,13 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 	if len(writers) == 0 {
 		return nil, fmt.Errorf("no clients selected")
 	}
-	rawKey, mcpURL, configName, err := onboardingCredential(ctx, client, toolKeyName(writers[0].Name()))
+	binding, err := onboardingCredential(ctx, client, toolKeyName(writers[0].Name()))
 	if err != nil {
 		return nil, fmt.Errorf("could not get a Telara credential: %w", err)
 	}
 
-	toolNames := agent.ResolveToolNames(ctx, mcpURL, rawKey)
+	mcpURL := binding.MCPURL
+	toolNames := agent.ResolveToolNames(ctx, mcpURL, binding.RawKey)
 	if mcpURL == "" {
 		mcpURL = defaultMCPURL()
 	}
@@ -210,7 +211,7 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 	results := make([]installResult, 0, len(writers))
 	var failed bool
 	for _, writer := range writers {
-		entry := newMCPEntryForWriter(mcpURL, rawKey, writer)
+		entry := newMCPEntryForWriter(mcpURL, binding.RawKey, writer)
 		if err := writer.Write(scope, "telara", entry); err != nil {
 			results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: err.Error()})
 			failed = true
@@ -223,10 +224,17 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 				continue
 			}
 		}
-		results = append(results, installResult{client: writer.Name(), status: "CONNECTED", detail: configName})
+		results = append(results, installResult{client: writer.Name(), status: "CONNECTED", detail: binding.ConfigName})
 	}
 	if failed {
 		return results, fmt.Errorf("one or more clients could not be configured")
+	}
+	// Record the bootstrap binding so the next run has a selection to reuse
+	// instead of bootstrapping again (TENG-3017). Global scope only: install
+	// writes at global or managed scope, and managed is the admin's layer, not
+	// a per-user selection.
+	if scope == agent.ScopeGlobal {
+		recordWiredGlobal(binding)
 	}
 	return results, nil
 }

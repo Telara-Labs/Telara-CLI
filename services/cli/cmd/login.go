@@ -242,21 +242,22 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		}
 	}
 
-	rawKey, mcpURL, configName, err := onboardingCredential(context.Background(), client, toolKeyName(detected[0].Name()))
+	binding, err := onboardingCredential(context.Background(), client, toolKeyName(detected[0].Name()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not get a Telara credential to connect your tools: %v\n", err)
 		return
 	}
 
+	mcpURL := binding.MCPURL
 	if mcpURL == "" {
 		mcpURL = defaultMCPURL()
 	}
 
-	toolNames := agent.ResolveToolNames(context.Background(), mcpURL, rawKey)
+	toolNames := agent.ResolveToolNames(context.Background(), mcpURL, binding.RawKey)
 
 	var wired []string
 	for _, w := range detected {
-		entry := newMCPEntryForWriter(mcpURL, rawKey, w)
+		entry := newMCPEntryForWriter(mcpURL, binding.RawKey, w)
 		if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
 			// Say so. A writer now refuses rather than overwriting a config it
 			// cannot parse, so a skip here means a tool the user believes is
@@ -271,7 +272,16 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 	}
 
 	if len(wired) > 0 {
-		fmt.Fprintf(os.Stdout, "  Connected to %s: ", configName)
+		// Record what login just wired (TENG-3017). Without this the global
+		// layer read back as an anonymous "connected" with no config behind
+		// it: `telara config` could not name it, `telara install` treated the
+		// user as having no selection and re-bootstrapped, and the picker had
+		// nothing to default to. Only a real base binding is stored as the
+		// user's default; a downgrade fallback is recorded as an explicit
+		// binding so it is never presented as their personal baseline.
+		recordWiredGlobal(binding)
+
+		fmt.Fprintf(os.Stdout, "  Connected to %s: ", binding.ConfigName)
 		for i, name := range wired {
 			if i > 0 {
 				fmt.Fprint(os.Stdout, ", ")
@@ -281,6 +291,22 @@ func autoWireTools(client *api.Client, tenantID string, force bool) {
 		fmt.Fprintln(os.Stdout)
 		fmt.Fprintln(os.Stdout)
 	}
+}
+
+// recordWiredGlobal persists the configuration a credential-based auto-wire
+// bound the global layer to. A binding with no config id (the tenant-master
+// downgrade, which has no per-config identity) is not recorded at all: a stored
+// id is the thing every later lookup keys on, and a blank one would make
+// `telara install` resolve the empty string as a config name.
+func recordWiredGlobal(binding onboardingBinding) {
+	if binding.ConfigID == "" {
+		return
+	}
+	if binding.IsBase {
+		_ = agent.SaveWiredGlobalDefault(binding.ConfigID, binding.ConfigName)
+		return
+	}
+	_ = agent.SaveWiredGlobal(binding.ConfigID, binding.ConfigName)
 }
 
 // ensureMCPConfig verifies that the MCP config in detected tools belongs to the
