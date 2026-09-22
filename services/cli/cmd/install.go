@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -206,6 +207,14 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 	toolNames := agent.ResolveToolNames(ctx, mcpURL, binding.RawKey)
 	if mcpURL == "" {
 		mcpURL = defaultMCPURL()
+	}
+
+	// Keep a copy for `telara mcp stdio`, which has no other way to authenticate
+	// (TENG-3019). Best-effort: failing to cache the key must not fail an install
+	// that otherwise succeeded, since the http entry written below carries its
+	// own copy and works without this one.
+	if err := auth.SaveMCPKey(prefs.APIURL, binding.RawKey); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not store the MCP key for `telara mcp stdio`: %v\n", err)
 	}
 
 	results := make([]installResult, 0, len(writers))
