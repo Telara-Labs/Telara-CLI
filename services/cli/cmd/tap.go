@@ -2,7 +2,7 @@ package cmd
 
 // tap.go is the TAP client for Telara's authenticated users (TENG-2962): what
 // the tenant has promoted, and pulling one onto this machine. The runner that
-// executes a primitive is the open-source tap-runtime; this is the half that
+// executes a primitive is the open-source TAP runner, `tap`; this is the half that
 // talks to the tenant's registry, so it lives in the telara CLI with the
 // user's login rather than in any separate tool.
 
@@ -28,7 +28,7 @@ var tapCmd = &cobra.Command{
 	Short: "TAP primitives your organisation distributes",
 	Long: `List and pull the TAP primitives your tenant has promoted.
 
-A primitive is a program an agent runs through the TAP runner (tap-runtime).
+A primitive is a program an agent runs through the TAP runner (tap).
 Only versions an administrator promoted are listed or delivered.`,
 }
 
@@ -190,6 +190,6 @@ func installPrimitive(ctx context.Context, client *api.Client, ref, clientName s
 			fmt.Printf("\nInstalled %s -> %s\n", t.client, res.Path)
 		}
 	}
-	fmt.Println("\nRun it through the TAP runner's tap_run tool. If your client has no tap_run tool, connect the runner: tap-runtime install --client <client>")
+	fmt.Println("\nRun it through the TAP runner's tap_run tool. If your client has no tap_run tool, connect the runner: tap install --client <client>")
 	return nil
 }

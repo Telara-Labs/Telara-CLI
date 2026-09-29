@@ -278,6 +278,6 @@ Pass the arguments the primitive's schemas/ describe. The runner asks you to
 approve any change it would make.
 
 If no `+"`tap_run`"+` tool is available, the runner is not connected to this
-client. Install it with `+"`tap-runtime install --client <client>`"+`.
+client. Install it with `+"`tap install --client <client>`"+`.
 `, p.Name, string(desc), p.Name, p.Ref(), dir)
 }
