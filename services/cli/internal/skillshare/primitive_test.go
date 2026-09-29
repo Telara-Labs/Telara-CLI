@@ -117,7 +117,7 @@ func TestInstallPrimitiveRefusesBytesThatAreNotWhatWasPromoted(t *testing.T) {
 	root := t.TempDir()
 	in := install(goodPackage(t))
 	in.ArtifactDigest = "sha256:" + strings.Repeat("0", 64)
-	if _, err := InstallPrimitive(root, in, false); err == nil || !strings.Contains(err.Error(), "refusing to install") {
+	if _, err := InstallPrimitive(root, in, false); err == nil || !strings.Contains(err.Error(), "refusing to use them") {
 		t.Fatalf("err %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "recent-mail")); !os.IsNotExist(err) {

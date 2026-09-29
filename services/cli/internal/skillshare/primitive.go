@@ -53,6 +53,17 @@ func (p PrimitiveInstall) Ref() string {
 	return p.Publisher + "/" + p.Name + "@" + p.Version
 }
 
+// Verify checks the package bytes against the digest the registry recorded
+// for the promoted version.
+func (p PrimitiveInstall) Verify() error {
+	sum := sha256.Sum256(p.Package)
+	if got := "sha256:" + hex.EncodeToString(sum[:]); got != p.ArtifactDigest {
+		return fmt.Errorf("%s: received %d bytes digesting to %s, but the registry records %s; refusing to use them",
+			p.Ref(), len(p.Package), got, p.ArtifactDigest)
+	}
+	return nil
+}
+
 type primitiveMarker struct {
 	Ref            string `json:"ref"`
 	ArtifactDigest string `json:"artifact_digest"`
@@ -79,10 +90,8 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 	if err := checkSkillDirName(p.Name); err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(p.Package)
-	if got := "sha256:" + hex.EncodeToString(sum[:]); got != p.ArtifactDigest {
-		return nil, fmt.Errorf("%s: received %d bytes digesting to %s, but the registry records %s; refusing to install",
-			p.Ref(), len(p.Package), got, p.ArtifactDigest)
+	if err := p.Verify(); err != nil {
+		return nil, err
 	}
 
 	dest := filepath.Join(root, p.Name)

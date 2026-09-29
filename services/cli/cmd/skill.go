@@ -3,7 +3,6 @@ package cmd
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -56,10 +55,8 @@ var skillInstallCmd = &cobra.Command{
 	Short: "Install a shared skill or a TAP primitive onto this machine",
 	Long: `Download an approved shared skill and write it where your agent will load it.
 
-A publisher/name ref installs a TAP primitive your tenant has promoted, at its
-latest promoted version unless @version is given. It is written as a skill
-folder the agent runs with the TAP runner's tap_run tool; the package's digest
-is verified before it is unpacked.
+A publisher/name ref installs a TAP primitive your tenant has promoted, the
+same as ` + "`telara tap pull`" + `.
 
 The registry's content hash is VERIFIED before anything is written, and the body
 is re-scanned locally. Only clients with a real skills directory can be written
@@ -539,59 +536,6 @@ func runSkillInstall(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("\n%s %s -> %s\n", verb, t.client, res.Path)
 	}
-	return nil
-}
-
-// installPrimitive fetches a promoted primitive and writes it as a skill
-// folder into each target client.
-func installPrimitive(ctx context.Context, client *api.Client, ref, clientName string, scope agent.Scope, force, dryRun bool) error {
-	pkg, err := client.GetPrimitivePackage(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("fetch primitive %q: %w", ref, err)
-	}
-	raw, err := base64.StdEncoding.DecodeString(pkg.PackageBase64)
-	if err != nil {
-		return fmt.Errorf("fetch primitive %q: package is not base64: %w", ref, err)
-	}
-	in := skillshare.PrimitiveInstall{
-		Publisher: pkg.Publisher, Name: pkg.Name, Version: pkg.Version,
-		ArtifactDigest: pkg.ArtifactDigest, Package: raw,
-	}
-	fmt.Printf("Primitive: %s\n", in.Ref())
-	fmt.Printf("Digest:    %s\n", in.ArtifactDigest)
-
-	targets, err := installTargets(clientName, scope)
-	if err != nil {
-		return err
-	}
-	if len(targets) == 0 {
-		return fmt.Errorf("no agent client with a skills directory was detected")
-	}
-	if dryRun {
-		for _, t := range targets {
-			fmt.Printf("\n[dry-run] would install to %s/%s/\n", t.dir, in.Name)
-		}
-		return nil
-	}
-	for _, t := range targets {
-		res, werr := skillshare.InstallPrimitive(t.dir, in, force)
-		if werr != nil {
-			var notOurs *skillshare.ErrNotAPrimitiveFolder
-			if errors.As(werr, &notOurs) {
-				return fmt.Errorf("%w\n\nRe-run with --force to replace it", werr)
-			}
-			return werr
-		}
-		switch {
-		case res.Unchanged:
-			fmt.Printf("\nAlready installed %s -> %s\n", t.client, res.Path)
-		case res.Overwrote:
-			fmt.Printf("\nUpdated %s -> %s\n", t.client, res.Path)
-		default:
-			fmt.Printf("\nInstalled %s -> %s\n", t.client, res.Path)
-		}
-	}
-	fmt.Println("\nRun it through the TAP runner's tap_run tool. If your client has no tap_run tool, connect the runner: tap-runtime install --client <client>")
 	return nil
 }
 
