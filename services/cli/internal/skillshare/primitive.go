@@ -25,12 +25,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/discovery"
 	"gopkg.in/yaml.v3"
 )
 
 // PrimitiveMarker is the file that says a skills folder is an installed
 // primitive, and which one.
-const PrimitiveMarker = ".telara-primitive.json"
+const PrimitiveMarker = discovery.PrimitiveMarkerFileName
 
 // Bounds on unpacking. Publish rejects packages over 4 MiB compressed; these
 // stop a package that decompresses far past that.

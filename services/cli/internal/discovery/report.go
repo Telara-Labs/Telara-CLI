@@ -110,6 +110,8 @@ type ResourceAssertion struct {
 	ContentHash         string `json:"contentHash,omitempty"`
 	ReferencedFileCount int    `json:"referencedFileCount,omitempty"`
 	HasExecutable       bool   `json:"hasExecutable,omitempty"`
+	// TapPrimitiveRef is set when the skill is an installed TAP primitive.
+	TapPrimitiveRef string `json:"tapPrimitiveRef,omitempty"`
 }
 
 // DiscoveryReport is the unit the collector submits. It is idempotent on
@@ -252,6 +254,7 @@ func BuildReport(
 				ContentHash:         skill.ContentHash,
 				ReferencedFileCount: skill.ReferencedFileCount,
 				HasExecutable:       skill.HasExecutable,
+				TapPrimitiveRef:     skill.PrimitiveRef,
 				// A skill found on disk is unmediated by construction: nothing
 				// in its load path traverses Telara. ApplyManagedEndpoints
 				// cannot upgrade it — it skips stdio assertions — and that is

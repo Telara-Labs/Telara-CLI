@@ -3,6 +3,7 @@ package discovery
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -36,6 +37,10 @@ import (
 // not a skill, regardless of what else it contains.
 const SkillFileName = "SKILL.md"
 
+// PrimitiveMarkerFileName marks a skill folder written by `telara tap pull`
+// and names the promoted version it holds (TENG-2962).
+const PrimitiveMarkerFileName = ".telara-primitive.json"
+
 // maxSkillFileBytes bounds a single read. A SKILL.md is prose; anything past
 // this is not a skill we can meaningfully describe, and an unbounded read on an
 // employee machine is a denial-of-service the collector should not offer.
@@ -65,6 +70,11 @@ type DiscoveredSkill struct {
 	ReferencedFileCount int `json:"referencedFileCount"`
 	// HasExecutable records whether any sibling file carries an executable bit.
 	HasExecutable bool `json:"hasExecutable"`
+	// PrimitiveRef is set when the skill folder is a TAP primitive installed by
+	// `telara tap pull` (publisher/name@version, from PrimitiveMarkerFileName).
+	// Such a folder is already distributed through the tenant's registry, so it
+	// is not shadow adoption.
+	PrimitiveRef string `json:"primitiveRef,omitempty"`
 	// SourceLocationKey is an opaque, root-relative package identity used only
 	// to keep two independently installed packages with the same frontmatter
 	// name from collapsing into one estate assertion. It is never serialized:
@@ -287,7 +297,25 @@ func readSkillFile(skillPath string) (DiscoveredSkill, error) {
 		ContentHash:         "sha256:" + hex.EncodeToString(sum[:]),
 		ReferencedFileCount: refCount,
 		HasExecutable:       hasExec,
+		PrimitiveRef:        primitiveRef(filepath.Dir(skillPath)),
 	}, nil
+}
+
+// primitiveRef reads the ref from an installed primitive's marker, or "" when
+// the folder is not one. A marker that cannot be read is treated as absent:
+// the skill is then reported as an ordinary skill, the conservative reading.
+func primitiveRef(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, PrimitiveMarkerFileName))
+	if err != nil || len(raw) > 4096 {
+		return ""
+	}
+	var m struct {
+		Ref string `json:"ref"`
+	}
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Ref)
 }
 
 // parseSkillFrontmatter extracts name and description from leading YAML
