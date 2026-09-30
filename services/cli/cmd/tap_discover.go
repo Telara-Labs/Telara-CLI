@@ -190,7 +190,13 @@ func liveReviewActions(cmd *cobra.Command) discover.ReviewActions {
 			if len(desc) > 1 {
 				summary = strings.TrimSpace(desc[1])
 			}
-			text, isError, err := m.callTool(ctx, "telara_skill_publish", publishArgs(d.Name, summary, d.Publisher, audience, audienceID, d.Files))
+			// Artifacts refuses a draft that still holds anything
+			// credential-shaped; nothing is sent then.
+			files, err := d.Artifacts()
+			if err != nil {
+				return "", false, err
+			}
+			text, isError, err := m.callTool(ctx, "telara_skill_publish", publishArgs(d.Name, summary, d.Publisher, audience, audienceID, files))
 			return text, err == nil && !isError, err
 		},
 	}
