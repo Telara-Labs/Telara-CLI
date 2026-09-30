@@ -60,6 +60,8 @@ gitlab.com/telara-labs/tap-runtime/contract v0.0.0-20260929043506-c37e9b089cfa h
 gitlab.com/telara-labs/tap-runtime/contract v0.0.0-20260929043506-c37e9b089cfa/go.mod h1:RoGevLYFqRxbe2fdrM7wcB4n0SyXME4dN5nxU+AFUlA=
 gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930081947-697c778154b2 h1:PtgjKlA+LYTg1btTinRoGdGOWivWNR6Nwp3KsfeHV/g=
 gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930081947-697c778154b2/go.mod h1:u3x41kDl9Kdgab2HTJkmxwNmfY3Sv75xF3OGNSVi5M0=
+gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930124027-aa1b08251c0a h1:Ev0TYsHBXcvVR6q1gSsvbr14y419qDOpZdL97Ok30y4=
+gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930124027-aa1b08251c0a/go.mod h1:u3x41kDl9Kdgab2HTJkmxwNmfY3Sv75xF3OGNSVi5M0=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=

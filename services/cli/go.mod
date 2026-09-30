@@ -8,7 +8,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.11.1
-	gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930081947-697c778154b2
+	gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930124027-aa1b08251c0a
 	golang.org/x/crypto v0.49.0
 	golang.org/x/term v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
