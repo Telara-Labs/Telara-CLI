@@ -59,6 +59,7 @@ func init() {
 	tapPullCmd.Flags().Bool("force", false, "Replace a same-name skill folder that is not an installed primitive")
 	tapPullCmd.Flags().Bool("dry-run", false, "Fetch and verify, but write nothing")
 	tapPullCmd.Flags().String("out", "", "Write the verified package (gzip tar) to this file instead of installing it")
+	tapPullCmd.Flags().BoolVar(&tapNoConnect, "no-connect", false, "Install the primitive but do not register the tap runner with the client or set its telemetry")
 	tapCmd.AddCommand(tapListCmd, tapPullCmd)
 	rootCmd.AddCommand(tapCmd)
 }
@@ -190,6 +191,11 @@ func installPrimitive(ctx context.Context, client *api.Client, ref, clientName s
 			fmt.Printf("\nInstalled %s -> %s\n", t.client, res.Path)
 		}
 	}
-	fmt.Println("\nRun it through the TAP runner's tap_run tool. If your client has no tap_run tool, connect the runner: tap install --client <client>")
+	var clients []string
+	for _, t := range targets {
+		clients = append(clients, t.client)
+	}
+	connectRunner(clients, prefs.APIURL)
+	fmt.Println("\nRun it through the TAP runner's tap_run tool.")
 	return nil
 }
