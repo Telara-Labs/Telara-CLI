@@ -58,8 +58,8 @@ github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 gitlab.com/telara-labs/tap-runtime/contract v0.0.0-20260929043506-c37e9b089cfa h1:Sl4Y+/R/isFR9VzPNJsRbJ9dDoSvk/NUhMNlWQR4F1E=
 gitlab.com/telara-labs/tap-runtime/contract v0.0.0-20260929043506-c37e9b089cfa/go.mod h1:RoGevLYFqRxbe2fdrM7wcB4n0SyXME4dN5nxU+AFUlA=
-gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930025608-91e7c5755d5f h1:pxam4xKieY0D/+gqwDlgkWQGM7VjNlJnkBs4dYd2B+A=
-gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930025608-91e7c5755d5f/go.mod h1:u3x41kDl9Kdgab2HTJkmxwNmfY3Sv75xF3OGNSVi5M0=
+gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930080024-aedbc54f5983 h1:LPDx48/knE/x5+cuOksebLWEYM2xOgk3N/+2uBg04o8=
+gitlab.com/telara-labs/tap-runtime/discover v0.0.0-20260930080024-aedbc54f5983/go.mod h1:u3x41kDl9Kdgab2HTJkmxwNmfY3Sv75xF3OGNSVi5M0=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
