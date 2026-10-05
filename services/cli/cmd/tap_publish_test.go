@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -127,5 +128,30 @@ func TestPublishGoesThroughTelaraSkillPublish(t *testing.T) {
 	files, _ := got["files"].(map[string]any)
 	if got["publisher"] != "com.acme" || got["target_scope_type"] != "user" || got["target_scope_id"] != "u-1" || files["main.sh"] != "ls" {
 		t.Fatalf("arguments = %v", got)
+	}
+}
+
+// The publish session trusts what every other request to Telara trusts: a
+// gateway signed by the CA in TELARA_CA_CERT_PATH is reachable.
+func TestTapPublishMCPUsesTelaraTransport(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Mcp-Session-Id", "sess-1")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`)
+	}))
+	defer srv.Close()
+	ca := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	bare := &mcpCaller{endpoint: srv.URL, key: "k"}
+	if err := bare.initialize(context.Background()); err == nil {
+		t.Fatal("the default client must not trust a self-signed gateway; the test proves nothing otherwise")
+	}
+	t.Setenv("TELARA_CA_CERT_PATH", ca)
+	m := &mcpCaller{endpoint: srv.URL, key: "k", http: publishHTTPClient()}
+	if err := m.initialize(context.Background()); err != nil {
+		t.Fatalf("publish must trust TELARA_CA_CERT_PATH like every other request: %v", err)
 	}
 }

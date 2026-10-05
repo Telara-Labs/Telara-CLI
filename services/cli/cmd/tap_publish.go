@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
@@ -254,6 +255,12 @@ func readSavedPrimitive(dir string) (*savedPrimitive, error) {
 	return sp, nil
 }
 
+// publishHTTPClient uses the same transport as every other request to Telara,
+// so a custom CA or TELARA_INSECURE reaches the MCP endpoint too.
+func publishHTTPClient() *http.Client {
+	return &http.Client{Transport: api.NewTransport()}
+}
+
 func runTapPublish(cmd *cobra.Command, args []string) error {
 	audience, _ := cmd.Flags().GetString("audience")
 	if audience != "user" && audience != "tenant" {
@@ -285,7 +292,7 @@ func runTapPublish(cmd *cobra.Command, args []string) error {
 		}
 		audienceID = who.UserID
 	}
-	m := &mcpCaller{endpoint: streamableDefaultMCPURL(), key: key}
+	m := &mcpCaller{endpoint: streamableDefaultMCPURL(), key: key, http: publishHTTPClient()}
 	if err := m.initialize(ctx); err != nil {
 		return err
 	}

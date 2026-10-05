@@ -10,6 +10,8 @@ import (
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 )
 
 type installTestWriter struct {
@@ -55,6 +57,12 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
 	}))
 	defer server.Close()
+	// Install caches the key for `telara mcp stdio` in the credential store;
+	// keep that write in a throwaway home, never the developer's own.
+	t.Setenv("HOME", t.TempDir())
+	orig := prefs
+	prefs = &config.Prefs{APIURL: server.URL}
+	defer func() { prefs = orig }()
 
 	writer := &installTestWriter{name: "codex", path: "/tmp/config.toml"}
 	if _, err := installWritersWithCredential(context.Background(), api.NewClient(server.URL, "token"), []agent.AgentWriter{writer}, agent.ScopeGlobal); err != nil {
@@ -62,6 +70,9 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 	}
 	if writer.written.Headers["Authorization"] != "Bearer telara_mcp_base_key" {
 		t.Fatalf("client was not wired to the base credential: %#v", writer)
+	}
+	if key, err := auth.LoadMCPKey(server.URL); err != nil || key != "telara_mcp_base_key" {
+		t.Fatalf("the key was not cached for telara mcp stdio: %q, %v", key, err)
 	}
 }
 

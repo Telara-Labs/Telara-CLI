@@ -21,19 +21,31 @@ type Client struct {
 }
 
 // NewClient creates a new API client for the given base URL and bearer token.
+func NewClient(baseURL, token string) *Client {
+	return &Client{
+		BaseURL: baseURL,
+		Token:   token,
+		HTTPClient: &http.Client{
+			Timeout:   15 * time.Second,
+			Transport: NewTransport(),
+		},
+	}
+}
+
+// NewTransport is the transport every request to Telara uses, so all of them
+// trust the same certificates.
 //
 // TLS behaviour (checked in order):
 //  1. TELARA_INSECURE=true  — skip verification entirely (escape hatch, not recommended)
 //  2. TELARA_CA_CERT_PATH   — load a custom CA bundle (local dev with self-signed cert)
 //  3. default               — system CA pool (works for Let's Encrypt / public CAs)
-func NewClient(baseURL, token string) *Client {
-	var transport http.RoundTripper = http.DefaultTransport
-
+func NewTransport() http.RoundTripper {
 	if os.Getenv("TELARA_INSECURE") == "true" {
-		transport = &http.Transport{
+		return &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 		}
-	} else if caPath := os.Getenv("TELARA_CA_CERT_PATH"); caPath != "" {
+	}
+	if caPath := os.Getenv("TELARA_CA_CERT_PATH"); caPath != "" {
 		caPEM, err := os.ReadFile(caPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: TELARA_CA_CERT_PATH: cannot read %s: %v\n", caPath, err)
@@ -44,19 +56,11 @@ func NewClient(baseURL, token string) *Client {
 			fmt.Fprintf(os.Stderr, "error: TELARA_CA_CERT_PATH: no valid certs found in %s\n", caPath)
 			os.Exit(1)
 		}
-		transport = &http.Transport{
+		return &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool},
 		}
 	}
-
-	return &Client{
-		BaseURL: baseURL,
-		Token:   token,
-		HTTPClient: &http.Client{
-			Timeout:   15 * time.Second,
-			Transport: transport,
-		},
-	}
+	return http.DefaultTransport
 }
 
 // APIError represents a non-2xx response from the Telara API.

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -107,6 +108,16 @@ func TestInstallPrimitiveWritesARunnableSkillFolder(t *testing.T) {
 	if m, ok := readPrimitiveMarker(dir); !ok || m.Ref != "dev.telara/recent-mail@0.2.0" {
 		t.Fatalf("marker %+v %v", m, ok)
 	}
+	// The TAP runner lists a skills folder only when it carries its own
+	// marker naming publisher/name with a digest.
+	raw, err := os.ReadFile(filepath.Join(dir, RunnerMarker))
+	if err != nil {
+		t.Fatalf("the runner's marker is missing, so tap_search cannot list it: %v", err)
+	}
+	var rm runnerMarker
+	if err := json.Unmarshal(raw, &rm); err != nil || rm.Name != "dev.telara/recent-mail" || rm.Digest == "" {
+		t.Fatalf("runner marker %s: %+v %v", raw, rm, err)
+	}
 	leftovers, _ := filepath.Glob(filepath.Join(root, ".recent-mail.installing-*"))
 	if len(leftovers) != 0 {
 		t.Fatalf("staging left behind: %v", leftovers)
@@ -197,5 +208,25 @@ func TestInstallPrimitiveNeedsAManifest(t *testing.T) {
 	pkg := packageOf(t, entry{name: "src/main.sh", body: "echo\n"})
 	if _, err := InstallPrimitive(t.TempDir(), install(pkg), false); err == nil || !strings.Contains(err.Error(), "primitive.yaml") {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// A folder pulled before the runner's marker existed gets it on the next pull
+// of the same digest, instead of staying invisible to tap_search.
+func TestInstallPrimitiveBackfillsTheRunnerMarker(t *testing.T) {
+	root := t.TempDir()
+	if _, err := InstallPrimitive(root, install(goodPackage(t)), false); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "recent-mail", RunnerMarker)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	res, err := InstallPrimitive(root, install(goodPackage(t)), false)
+	if err != nil || !res.Unchanged {
+		t.Fatalf("same digest again: %+v %v", res, err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the runner's marker was not backfilled: %v", err)
 	}
 }

@@ -33,6 +33,18 @@ import (
 // primitive, and which one.
 const PrimitiveMarker = discovery.PrimitiveMarkerFileName
 
+// RunnerMarker is the file the TAP runner looks for before it lists a skills
+// folder in tap_search: without it, tap_run can never reach the primitive.
+const RunnerMarker = ".tap-primitive.json"
+
+// runnerMarker is the TAP runner's saved-primitive marker. Name is
+// publisher/name, without the version.
+type runnerMarker struct {
+	Name       string `json:"name"`
+	Digest     string `json:"digest"`
+	Validation string `json:"validation"`
+}
+
 // Bounds on unpacking. Publish rejects packages over 4 MiB compressed; these
 // stop a package that decompresses far past that.
 const (
@@ -102,6 +114,13 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 		switch {
 		case ok && prev.ArtifactDigest == p.ArtifactDigest:
 			res.Unchanged = true
+			// A folder pulled before the runner's marker was written gets it
+			// now; without it the runner cannot list the primitive.
+			if _, err := os.Lstat(filepath.Join(dest, RunnerMarker)); errors.Is(err, os.ErrNotExist) {
+				if err := writeRunnerMarker(dest, p); err != nil {
+					return nil, err
+				}
+			}
 			return res, nil
 		case !ok && !force:
 			return nil, &ErrNotAPrimitiveFolder{Path: dest}
@@ -134,6 +153,9 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 	if err := os.WriteFile(filepath.Join(stage, PrimitiveMarker), append(marker, '\n'), 0o644); err != nil {
 		return nil, err
 	}
+	if err := writeRunnerMarker(stage, p); err != nil {
+		return nil, err
+	}
 
 	// Swap in whole: a reader sees the old folder or the new one, never half.
 	if res.Overwrote {
@@ -152,6 +174,11 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 		return nil, err
 	}
 	return res, nil
+}
+
+func writeRunnerMarker(dir string, p PrimitiveInstall) error {
+	b, _ := json.MarshalIndent(runnerMarker{Name: p.Publisher + "/" + p.Name, Digest: p.ArtifactDigest, Validation: "not_run"}, "", "  ")
+	return os.WriteFile(filepath.Join(dir, RunnerMarker), append(b, '\n'), 0o644)
 }
 
 func checkSkillDirName(name string) error {
