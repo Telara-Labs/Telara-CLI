@@ -14,9 +14,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/spf13/cobra"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
 )
 
@@ -172,4 +178,125 @@ func publishArgs(name, description, publisher, audience, audienceID string, file
 		args["target_scope_id"] = audienceID
 	}
 	return args
+}
+
+// tapPublishCmd publishes a primitive that `tap discover` saved: the folder
+// holds the package files, the SKILL.md pointer and the .tap-primitive.json
+// marker that names it publisher/name. Saving already refused any draft that
+// still held something credential-shaped.
+var tapPublishCmd = &cobra.Command{
+	Use:   "publish <saved-folder>",
+	Short: "Publish a primitive saved by tap discover to your Telara tenant",
+	Long: `Publish a primitive that tap discover saved, through the Telara MCP tool
+telara_skill_publish. --audience user shares it with you only; tenant offers it
+to everyone in the tenant once an admin approves it.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runTapPublish,
+}
+
+func init() {
+	tapPublishCmd.Flags().String("audience", "user", "Who gets it: user (only you) or tenant (everyone, after an admin approves it)")
+	tapCmd.AddCommand(tapPublishCmd)
+}
+
+// savedMarker is the file `tap discover` writes into a saved primitive.
+const savedMarker = ".tap-primitive.json"
+
+// savedPrimitive is a saved folder read back for publishing.
+type savedPrimitive struct {
+	Publisher, Name, Summary string
+	Files                    map[string][]byte
+}
+
+// readSavedPrimitive reads a folder saved by tap discover. The package is
+// every file except the marker and the SKILL.md pointer the runner adds.
+func readSavedPrimitive(dir string) (*savedPrimitive, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, savedMarker))
+	if err != nil {
+		return nil, fmt.Errorf("%s is not a primitive saved by tap discover (no %s)", dir, savedMarker)
+	}
+	var m struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("%s: unreadable %s: %w", dir, savedMarker, err)
+	}
+	publisher, name, ok := strings.Cut(m.Name, "/")
+	if !ok || publisher == "" || name == "" {
+		return nil, fmt.Errorf("%s: %s names %q, not publisher/name", dir, savedMarker, m.Name)
+	}
+	sp := &savedPrimitive{Publisher: publisher, Name: name, Summary: name, Files: map[string][]byte{}}
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() || rel == savedMarker || rel == "SKILL.md" {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		sp.Files[rel] = b
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := sp.Files["primitive.yaml"]; !ok {
+		return nil, fmt.Errorf("%s has no primitive.yaml", dir)
+	}
+	if desc := strings.SplitN(string(sp.Files["README.md"]), "\n\n", 3); len(desc) > 1 {
+		sp.Summary = strings.TrimSpace(desc[1])
+	}
+	return sp, nil
+}
+
+func runTapPublish(cmd *cobra.Command, args []string) error {
+	audience, _ := cmd.Flags().GetString("audience")
+	if audience != "user" && audience != "tenant" {
+		return fmt.Errorf("--audience is user or tenant, not %q", audience)
+	}
+	sp, err := readSavedPrimitive(args[0])
+	if err != nil {
+		return err
+	}
+	key, err := auth.LoadMCPKey(prefs.APIURL)
+	if err != nil {
+		return fmt.Errorf("not signed in to Telara on this machine (run: telara login, then telara install)")
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	audienceID := ""
+	if audience == "user" {
+		client, err := tapClient()
+		if err != nil {
+			return err
+		}
+		who, err := client.ValidateToken(ctx)
+		if err != nil {
+			return fmt.Errorf("find your user id: %w", err)
+		}
+		audienceID = who.UserID
+	}
+	m := &mcpCaller{endpoint: streamableDefaultMCPURL(), key: key}
+	if err := m.initialize(ctx); err != nil {
+		return err
+	}
+	text, isError, err := m.callTool(ctx, "telara_skill_publish", publishArgs(sp.Name, sp.Summary, sp.Publisher, audience, audienceID, sp.Files))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), text)
+	if isError {
+		cmd.SilenceUsage = true
+		return fmt.Errorf("telara_skill_publish refused %s/%s", sp.Publisher, sp.Name)
+	}
+	return nil
 }
