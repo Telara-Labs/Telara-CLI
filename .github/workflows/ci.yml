@@ -32,6 +32,15 @@ jobs:
       - name: Test
         run: cd services/cli && go test ./... -v -timeout 60s
 
+      - name: Set up Node for release artifact gate
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Check release artifact gate
+        run: node --test .github/scripts/check-cli-release.test.cjs
+
   release:
     runs-on: ubuntu-latest
     needs: test
@@ -50,13 +59,6 @@ jobs:
           go-version: "1.25"
           cache-dependency-path: services/cli/go.sum
 
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false
-
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
@@ -70,6 +72,36 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+
+  npm:
+    runs-on: ubuntu-latest
+    needs: [test, release]
+    # GoReleaser can publish the signed GitHub artifacts before Homebrew fails.
+    # Keep that failure visible, but allow npm when the exact release is complete.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.test.result == 'success' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Require published GitHub release artifacts
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { requirePublishedRelease } = require('./.github/scripts/check-cli-release.cjs');
+            const packageVersion = require('./npm/package.json').version;
+            const tag = context.ref.replace(/^refs\/tags\//, '');
+            const { data } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag });
+            const assets = requirePublishedRelease(data, tag, packageVersion);
+            core.info(`Verified published ${tag}: ${assets.join(', ')}`);
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
       - name: Publish to npm
         run: |
