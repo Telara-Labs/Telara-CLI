@@ -90,9 +90,10 @@ jobs:
         with:
           script: |
             const { requirePublishedRelease } = require('./.github/scripts/check-cli-release.cjs');
+            const packageVersion = require('./npm/package.json').version;
             const tag = context.ref.replace(/^refs\/tags\//, '');
             const { data } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag });
-            const assets = requirePublishedRelease(data, tag);
+            const assets = requirePublishedRelease(data, tag, packageVersion);
             core.info(`Verified published ${tag}: ${assets.join(', ')}`);
 
       - name: Set up Node

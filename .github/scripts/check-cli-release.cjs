@@ -3,15 +3,18 @@
 // npm's installer downloads these archives by the package's exact version.
 // A failed Homebrew update is harmless to that path; missing GitHub artifacts
 // are not, so they must block publishing the npm package.
-function requirePublishedRelease(release, tag) {
+function requirePublishedRelease(release, tag, packageVersion) {
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
     throw new Error(`Invalid CLI release tag: ${tag}`);
+  }
+  const version = tag.slice(1);
+  if (packageVersion !== version) {
+    throw new Error(`npm package version ${packageVersion} does not match CLI release ${tag}`);
   }
   if (!release || release.tag_name !== tag || release.draft !== false ||
       !release.published_at || !Number.isFinite(Date.parse(release.published_at))) {
     throw new Error(`CLI release ${tag} is not published`);
   }
-  const version = tag.slice(1);
   const expected = ['darwin', 'linux', 'windows'].flatMap(os =>
     ['amd64', 'arm64'].map(arch =>
       `telara_${version}_${os}_${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`));
