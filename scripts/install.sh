@@ -38,7 +38,9 @@ esac
 VERSION="${TELARA_VERSION:-}"
 if [ -z "$VERSION" ]; then
   # Try primary CDN first (check non-empty response), fall back to GitHub Releases API
-  VERSION="$(curl -fsSL "${PRIMARY_BASE_URL}/latest-version" 2>/dev/null)"
+  if ! VERSION="$(curl -fsSL "${PRIMARY_BASE_URL}/latest-version" 2>/dev/null)"; then
+    VERSION=""
+  fi
   if [ -z "$VERSION" ]; then
     echo "Primary version endpoint unavailable or empty, trying GitHub Releases..." >&2
     VERSION="$(curl -fsSL "${GITHUB_API_URL}" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
