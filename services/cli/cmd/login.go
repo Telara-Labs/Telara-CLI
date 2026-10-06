@@ -60,7 +60,7 @@ func runLoginWithToken(token string) error {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	return finishLogin(token, whoami)
+	return finishLogin(token, whoami, false)
 }
 
 func runDeviceFlowLogin() error {
@@ -118,12 +118,13 @@ func runDeviceFlowLogin() error {
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
 
-	return finishLogin(token, whoami)
+	return finishLogin(token, whoami, board != nil)
 }
 
 // finishLogin saves the token, prints the welcome banner, auto-restores any snapshot,
-// and auto-wires detected tools if no snapshot existed.
-func finishLogin(token string, whoami *api.WhoamiResponse) error {
+// and auto-wires detected tools if no snapshot existed. boardShown says the
+// animated board already drew the logo.
+func finishLogin(token string, whoami *api.WhoamiResponse, boardShown bool) error {
 	if err := auth.SaveToken(prefs.APIURL, token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
@@ -131,7 +132,7 @@ func finishLogin(token string, whoami *api.WhoamiResponse) error {
 	if err := config.Save(prefs); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
-	printLoginBanner(whoami.Email, whoami.OrgName)
+	printLoginBanner(whoami.Email, whoami.OrgName, boardShown)
 
 	restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
 
@@ -181,14 +182,18 @@ func ensureScanSchedule(token string) {
 
 // printLoginBanner prints the Telara logo, auth identity, and quick-start commands.
 // Colors are only emitted when stdout is a real terminal (handled by fatih/color).
-func printLoginBanner(email, orgName string) {
+// After the animated board, which already drew the logo, it starts at the
+// identity line.
+func printLoginBanner(email, orgName string, boardShown bool) {
 	// Logo: \telara. — backslash is part of the mark, period in brand purple.
 	logo := display.ColorBold.Sprint("\\telara") + display.ColorBrand.Sprint(".")
 	divider := display.ColorDim.Sprint("────────────────────────────────────────")
 
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "  "+logo)
-	fmt.Fprintln(os.Stdout, "  "+divider)
+	if !boardShown {
+		fmt.Fprintln(os.Stdout, "  "+logo)
+		fmt.Fprintln(os.Stdout, "  "+divider)
+	}
 	fmt.Fprintf(os.Stdout, "  Authenticated as %s", display.ColorBold.Sprint(email))
 	if orgName != "" {
 		fmt.Fprintf(os.Stdout, " %s", display.ColorDim.Sprint("· "+orgName))
@@ -450,6 +455,20 @@ func restoreSnapshotAfterLogin(userID, tenantID string) bool {
 	_ = agent.DeleteSnapshot(userID)
 
 	if len(entries) > 0 {
+		// A terminal gets one line naming the tools; elsewhere each config
+		// and its path, as before.
+		if display.StdoutIsTTY() {
+			var tools []string
+			seen := map[string]bool{}
+			for _, e := range entries {
+				if !seen[e.tool] {
+					seen[e.tool] = true
+					tools = append(tools, e.tool)
+				}
+			}
+			fmt.Fprintf(os.Stdout, "  Restored %d MCP config(s): %s\n\n", len(entries), strings.Join(tools, ", "))
+			return true
+		}
 		fmt.Fprintf(os.Stdout, "  Restored %d MCP config(s):\n", len(entries))
 		for _, e := range entries {
 			fmt.Fprintf(os.Stdout, "    %s (%s)  ->  %s\n", e.tool, e.scope, e.path)
