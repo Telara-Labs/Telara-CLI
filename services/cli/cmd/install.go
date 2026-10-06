@@ -12,6 +12,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
 )
 
 var (
@@ -88,17 +89,34 @@ func runInstall(command *cobra.Command, _ []string) error {
 		return err
 	}
 
-	var results []installResult
-	if configRef == "" {
-		// A first-time install has no selected global profile yet. Preserve the
-		// least-privilege Personal bootstrap path for that case only.
-		results, err = installWritersWithCredential(context.Background(), client, writers, scope)
-	} else {
-		cfg, resolveErr := resolveConfig(client, configRef)
-		if resolveErr != nil {
+	cfg := (*api.MCPConfig)(nil)
+	if configRef != "" {
+		var resolveErr error
+		if cfg, resolveErr = resolveConfig(client, configRef); resolveErr != nil {
 			return resolveErr
 		}
-		results, err = installWritersWithConfig(context.Background(), client, writers, cfg, scope)
+	}
+	// On a wide terminal every client's line pulses while the credential is
+	// issued, then shows how its write ended.
+	var board *installBoard
+	if display.Animate(command.OutOrStdout()) {
+		names := make([]string, len(writers))
+		for i, w := range writers {
+			names[i] = w.Name()
+		}
+		board = newInstallBoard(command.OutOrStdout(), names, installScopeName(scope))
+	}
+	var results []installResult
+	if cfg == nil {
+		// A first-time install has no selected global profile yet. Preserve the
+		// least-privilege Personal bootstrap path for that case only.
+		results, err = installWritersWithCredential(context.Background(), client, writers, scope, board.done)
+	} else {
+		results, err = installWritersWithConfig(context.Background(), client, writers, cfg, scope, board.done)
+	}
+	if board != nil {
+		board.stop(command.ErrOrStderr())
+		return err
 	}
 	printInstallResults(command.OutOrStdout(), results)
 	return err
@@ -194,7 +212,7 @@ func dryRunInstall(writers []agent.AgentWriter, scope agent.Scope) []installResu
 	return results
 }
 
-func installWritersWithCredential(ctx context.Context, client *api.Client, writers []agent.AgentWriter, scope agent.Scope) ([]installResult, error) {
+func installWritersWithCredential(ctx context.Context, client *api.Client, writers []agent.AgentWriter, scope agent.Scope, onResult ...func(int, installResult)) ([]installResult, error) {
 	if len(writers) == 0 {
 		return nil, fmt.Errorf("no clients selected")
 	}
@@ -219,21 +237,21 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 
 	results := make([]installResult, 0, len(writers))
 	var failed bool
-	for _, writer := range writers {
+	for i, writer := range writers {
 		entry := newMCPEntryForWriter(mcpURL, binding.RawKey, writer)
 		if err := writer.Write(scope, "telara", entry); err != nil {
-			results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: err.Error()})
+			results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "FAILED", detail: err.Error()}))
 			failed = true
 			continue
 		}
 		if permissions, ok := writer.(agent.PermissionWriter); ok {
 			if err := permissions.WritePermissions(scope, "telara", toolNames); err != nil {
-				results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: fmt.Sprintf("MCP entry written, but permissions failed: %v", err)})
+				results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "FAILED", detail: fmt.Sprintf("MCP entry written, but permissions failed: %v", err)}))
 				failed = true
 				continue
 			}
 		}
-		results = append(results, installResult{client: writer.Name(), status: "CONNECTED", detail: binding.ConfigName})
+		results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "CONNECTED", detail: binding.ConfigName}))
 	}
 	if failed {
 		return results, fmt.Errorf("one or more clients could not be configured")
@@ -252,7 +270,7 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 // caller, then writes only the requested client writers. It deliberately does
 // not call wireTools: that function configures every detected client, whereas
 // `install --client codex` must leave the other clients alone.
-func installWritersWithConfig(ctx context.Context, client *api.Client, writers []agent.AgentWriter, cfg *api.MCPConfig, scope agent.Scope) ([]installResult, error) {
+func installWritersWithConfig(ctx context.Context, client *api.Client, writers []agent.AgentWriter, cfg *api.MCPConfig, scope agent.Scope, onResult ...func(int, installResult)) ([]installResult, error) {
 	if len(writers) == 0 {
 		return nil, fmt.Errorf("no clients selected")
 	}
@@ -285,27 +303,35 @@ func installWritersWithConfig(ctx context.Context, client *api.Client, writers [
 
 	results := make([]installResult, 0, len(writers))
 	var failed bool
-	for _, writer := range writers {
+	for i, writer := range writers {
 		entry := newMCPEntryForWriter(mcpURL, key.RawKey, writer)
 		if err := writer.Write(scope, "telara", entry); err != nil {
-			results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: err.Error()})
+			results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "FAILED", detail: err.Error()}))
 			failed = true
 			continue
 		}
 		if permissions, ok := writer.(agent.PermissionWriter); ok {
 			if err := permissions.WritePermissions(scope, "telara", toolNames); err != nil {
-				results = append(results, installResult{client: writer.Name(), status: "FAILED", detail: fmt.Sprintf("MCP entry written, but permissions failed: %v", err)})
+				results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "FAILED", detail: fmt.Sprintf("MCP entry written, but permissions failed: %v", err)}))
 				failed = true
 				continue
 			}
 		}
-		results = append(results, installResult{client: writer.Name(), status: "CONNECTED", detail: cfg.Name})
+		results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "CONNECTED", detail: cfg.Name}))
 	}
 	revokeSupersededKeys(client, cfg.ID, keyName, key.KeyID)
 	if failed {
 		return results, fmt.Errorf("one or more clients could not be configured")
 	}
 	return results, nil
+}
+
+// notify tells each callback about one client's result and returns it.
+func notify(onResult []func(int, installResult), i int, r installResult) installResult {
+	for _, f := range onResult {
+		f(i, r)
+	}
+	return r
 }
 
 func printInstallResults(out io.Writer, results []installResult) {

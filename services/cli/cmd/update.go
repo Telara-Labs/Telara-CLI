@@ -48,7 +48,19 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	display.PrintInfo(fmt.Sprintf("Updating from %s to %s", current, latest))
+	// A wide terminal watches the release move to the installed copy.
+	var board *updateBoard
+	if display.Animate(os.Stderr) {
+		board = newUpdateBoard(os.Stderr, current, latest)
+	} else {
+		display.PrintInfo(fmt.Sprintf("Updating from %s to %s", current, latest))
+	}
+	fail := func(msg string) {
+		if board != nil {
+			board.set(func(b *updateBoard) { b.failed = msg })
+			board.stop()
+		}
+	}
 
 	filename := buildFilename(latest)
 
@@ -60,30 +72,47 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	tmpDir, err := os.MkdirTemp("", "telara-update-*")
 	if err != nil {
+		fail("Could not create a temporary folder")
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, filename)
-	spinner.Start("Downloading update")
-	if err := downloadFile(downloadURL, archivePath); err != nil {
-		spinner.Fail("Download failed")
+	if board == nil {
+		spinner.Start("Downloading update")
+	}
+	var progress []func(done, total int64)
+	if board != nil {
+		progress = append(progress, board.progress)
+	}
+	if err := downloadFile(downloadURL, archivePath, progress...); err != nil {
+		if board == nil {
+			spinner.Fail("Download failed")
+		}
+		fail("Download failed")
 		return fmt.Errorf("failed to download update: %w", err)
 	}
-	spinner.Success("Downloaded")
+	if board == nil {
+		spinner.Success("Downloaded")
+	} else {
+		board.set(func(b *updateBoard) { b.downloaded = true })
+	}
 
 	newBinaryPath := filepath.Join(tmpDir, binaryName())
 	if err := extractBinary(archivePath, newBinaryPath); err != nil {
+		fail("Could not extract the download")
 		return fmt.Errorf("failed to extract binary: %w", err)
 	}
 
 	execPath, err := os.Executable()
 	if err != nil {
+		fail("Could not find the installed copy")
 		return fmt.Errorf("failed to determine executable path: %w", err)
 	}
 
 	backupPath := execPath + ".bak"
 	if err := os.Rename(execPath, backupPath); err != nil {
+		fail("Cannot replace the installed copy (permission denied)")
 		printInstallInstructions(latest)
 		return fmt.Errorf("cannot replace binary (permission denied) — see instructions above")
 	}
@@ -91,12 +120,18 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	if err := os.Rename(newBinaryPath, execPath); err != nil {
 		// Attempt to restore backup.
 		_ = os.Rename(backupPath, execPath)
+		fail("Could not install the new copy")
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 
 	// Remove backup on success.
 	_ = os.Remove(backupPath)
 
+	if board != nil {
+		board.set(func(b *updateBoard) { b.installed = true })
+		board.stop()
+		return nil
+	}
 	display.PrintSuccess(fmt.Sprintf("Updated to %s", latest))
 	return nil
 }
@@ -122,7 +157,9 @@ func binaryName() string {
 	return "telara"
 }
 
-func downloadFile(url, dest string) error {
+// downloadFile saves url to dest, telling each progress callback how many
+// bytes have arrived of how many (total is -1 when the server does not say).
+func downloadFile(url, dest string, progress ...func(done, total int64)) error {
 	resp, err := http.Get(url) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
@@ -139,7 +176,11 @@ func downloadFile(url, dest string) error {
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	var body io.Reader = resp.Body
+	if len(progress) > 0 {
+		body = &countingReader{r: resp.Body, total: resp.ContentLength, report: progress}
+	}
+	if _, err := io.Copy(f, body); err != nil {
 		return fmt.Errorf("download interrupted: %w", err)
 	}
 	return nil
@@ -322,4 +363,21 @@ func checkVersionInBackground() {
 
 func init() {
 	rootCmd.AddCommand(updateCmd)
+}
+
+// countingReader reports bytes read so far to each callback as they arrive.
+type countingReader struct {
+	r      io.Reader
+	done   int64
+	total  int64
+	report []func(done, total int64)
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.done += int64(n)
+	for _, f := range c.report {
+		f(c.done, c.total)
+	}
+	return n, err
 }

@@ -57,28 +57,50 @@ var doctorCmd = &cobra.Command{
 and whether config files containing API keys are properly git-ignored.
 Run this first when your AI tool isn't seeing your integrations or knowledge.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var results []checkResult
-
-		results = append(results, runCheck("Checking auth", checkAuth))
-		results = append(results, runCheck("Checking connectivity", func() checkResult {
-			return checkConnectivity(prefs.APIURL)
-		}))
-
-		// Per-tool agent checks with individual spinners.
+		// Every check, in order, so a terminal can show them all up front.
+		type check struct {
+			label, name string
+			fn          func() checkResult
+		}
+		checks := []check{
+			{"Checking auth", "auth", checkAuth},
+			{"Checking connectivity", "connectivity", func() checkResult { return checkConnectivity(prefs.APIURL) }},
+		}
 		home, homeErr := os.UserHomeDir()
 		for _, tool := range agentToolDefs {
 			tool := tool // capture
-			results = append(results, runCheck("Checking "+tool.name, func() checkResult {
+			checks = append(checks, check{"Checking " + tool.name, tool.name, func() checkResult {
 				if homeErr != nil {
 					return checkResult{name: tool.name, status: "fail", message: "cannot determine home directory"}
 				}
 				return checkAgentTool(home, tool)
-			}))
+			}})
 		}
+		checks = append(checks,
+			check{"Checking global context", "global context", checkGlobalContext},
+			check{"Checking project context", "project context", checkProjectContext},
+			check{"Checking gitignore", "gitignore", checkGitignore},
+		)
 
-		results = append(results, runCheck("Checking global context", checkGlobalContext))
-		results = append(results, runCheck("Checking project context", checkProjectContext))
-		results = append(results, runCheck("Checking gitignore", checkGitignore))
+		var results []checkResult
+		if display.Animate(os.Stderr) {
+			names := make([]string, len(checks))
+			for i, c := range checks {
+				names[i] = c.name
+			}
+			board := newDoctorBoard(os.Stderr, names)
+			for i, c := range checks {
+				board.begin(i)
+				r := c.fn()
+				board.end(i, r)
+				results = append(results, r)
+			}
+			board.stop()
+		} else {
+			for _, c := range checks {
+				results = append(results, runCheck(c.label, c.fn))
+			}
+		}
 
 		// Summary.
 		passes, failures, skips, warns := 0, 0, 0, 0
@@ -325,7 +347,6 @@ func checkContextByName(checkName, contextName string) checkResult {
 
 	return checkResult{name: checkName, status: "pass", message: c.ConfigName}
 }
-
 
 // checkGitignore warns if any MCP settings files exist in the current
 // directory but are not covered by .gitignore.

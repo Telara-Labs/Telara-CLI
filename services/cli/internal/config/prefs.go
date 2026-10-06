@@ -37,6 +37,9 @@ func NormalizeAPIBaseURL(raw string) string {
 type Prefs struct {
 	ActiveContext string `json:"active_context,omitempty"`
 	APIURL        string `json:"api_url,omitempty"`
+	// TapOffer is how the person answered the offer telara scan makes to set
+	// up TAP: "accepted" or "declined". Empty means it has not been asked.
+	TapOffer string `json:"tap_offer,omitempty"`
 }
 
 // DefaultPrefs returns a Prefs struct with default values applied.

@@ -227,3 +227,29 @@ func TestFullUpdateFlow_GitHubWorks(t *testing.T) {
 		}
 	})
 }
+
+// Progress callbacks hear every byte, ending at the server's length.
+func TestDownloadFile_ReportsProgress(t *testing.T) {
+	body := bytes.Repeat([]byte("x"), 200000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+		w.Write(body)
+	}))
+	defer srv.Close()
+
+	var last, total int64
+	calls := 0
+	err := downloadFile(srv.URL+"/x.tar.gz", t.TempDir()+"/x.tar.gz", func(done, n int64) {
+		if done < last {
+			t.Fatalf("progress went back from %d to %d", last, done)
+		}
+		last, total = done, n
+		calls++
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls == 0 || last != int64(len(body)) || total != int64(len(body)) {
+		t.Fatalf("progress ended at %d/%d after %d calls, want %d", last, total, calls, len(body))
+	}
+}

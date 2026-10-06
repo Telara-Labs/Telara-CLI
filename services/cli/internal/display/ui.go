@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	ColorBrand   = color.New(color.FgMagenta, color.Bold)
+	// Telara violet (xterm 99, the 256-color match for #8B5BFF), shared with TAP.
+	ColorBrand   = color.New(38, 5, 99, color.Bold)
 	ColorSuccess = color.New(color.FgGreen, color.Bold)
 	ColorError   = color.New(color.FgRed, color.Bold)
 	ColorWarn    = color.New(color.FgYellow)

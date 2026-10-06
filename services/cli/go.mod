@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/Telara-Labs/TAP-Runtime/discover v0.0.0-20261006202100-5a7d6ae3d249
 	github.com/fatih/color v1.18.0
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.8.0

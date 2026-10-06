@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/term"
 	"io"
 	"os"
 	"path/filepath"
@@ -121,12 +122,25 @@ func runScan(cmd *cobra.Command, args []string) error {
 		enforceRemovals(endpoint, token, asJSON)
 	}
 
+	// A wide terminal watches a radar while the machine is scanned. The
+	// scheduled scan has no terminal and prints as before.
+	var board *scanBoard
+	if !asJSON && !dryRun && display.Animate(os.Stdout) {
+		board = newScanBoard(os.Stdout)
+	}
+
 	startedAt := time.Now().UTC()
 	// MCP configuration and agent skills are two asset classes on the same
 	// machine. Skills scan their own scopes (see ScopeGlobalSkills), so the
 	// results concatenate without either class shadowing the other's coverage.
 	results := append(discovery.ScanAll(), discovery.ScanSkills()...)
 	completedAt := time.Now().UTC()
+	if board != nil {
+		// Let the sweep finish one turn, so a fast scan is still seen.
+		if wait := radarTurn - time.Since(startedAt); wait > 0 {
+			time.Sleep(wait)
+		}
+	}
 
 	report := discovery.BuildReport(
 		discovery.CollectorIdentity{
@@ -148,6 +162,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 	discovery.ApplyManagedEndpoints(&report, []string{endpoint})
 
 	summary := discovery.Summarize(report)
+	if board != nil {
+		board.found(summary.ScopesTotal, summary.ScopesComplete, summary.ScopesPartial, len(report.ResourceAssertions))
+	}
 
 	if dryRun {
 		enc := json.NewEncoder(os.Stdout)
@@ -163,17 +180,23 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	client := api.NewClient(endpoint, token)
 	spinner := display.NewSpinner()
-	if !asJSON {
+	if board != nil {
+		board.submit()
+	} else if !asJSON {
 		spinner.Start("Submitting discovery report...")
 	}
 	resp, err := client.SubmitDiscoveryReport(context.Background(), report)
 	if err != nil {
-		if !asJSON {
+		if board != nil {
+			board.stop(false)
+		} else if !asJSON {
 			spinner.Fail("Failed to submit discovery report")
 		}
 		return err
 	}
-	if !asJSON {
+	if board != nil {
+		board.stop(true)
+	} else if !asJSON {
 		spinner.Success("Discovery report submitted")
 	}
 
@@ -189,7 +212,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return enc.Encode(out)
 	}
 
-	printCoverage(os.Stdout, summary, len(report.ResourceAssertions))
+	if board == nil {
+		printCoverage(os.Stdout, summary, len(report.ResourceAssertions))
+	}
 	display.PrintKV(os.Stdout, "Collection run:", resp.CollectionRunID)
 	if resp.Duplicate {
 		display.PrintKV(os.Stdout, "Duplicate:", "true (already ingested)")
@@ -198,8 +223,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if resp.RejectedAssertionCount > 0 {
 		display.PrintKV(os.Stdout, "Rejected assertions:", fmt.Sprintf("%d", resp.RejectedAssertionCount))
 	}
+	if shouldOfferTAP(display.StdoutIsTTY() && term.IsTerminal(int(os.Stdin.Fd())), asJSON, dryRun, prefs) {
+		offerTAP(os.Stdin, os.Stdout, realTapSteps(os.Stdin, os.Stdout, os.Stderr))
+	}
 	return nil
 }
+
+// radarTurn is one sweep of the scan radar.
+const radarTurn = display.RadarTurnFrames * 80 * time.Millisecond
 
 func printCoverage(w io.Writer, summary discovery.CoverageSummary, serverCount int) {
 	display.PrintKV(w, "Scopes scanned:", fmt.Sprintf("%d", summary.ScopesTotal))

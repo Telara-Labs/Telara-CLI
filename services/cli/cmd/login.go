@@ -76,8 +76,16 @@ func runDeviceFlowLogin() error {
 		verifyURL = "https://www.telara.dev/device"
 	}
 
-	fmt.Fprintf(os.Stdout, "Open this URL in your browser:\n  %s\n\n", verifyURL)
-	fmt.Fprintf(os.Stdout, "Enter code: %s\n\n", result.UserCode)
+	// A wide terminal gets the animated board, which shows the same URL and
+	// code; anything else gets the plain lines and a spinner.
+	var board *loginBoard
+	var spinner *display.Spinner
+	if display.Animate(os.Stdout) {
+		board = newLoginBoard(os.Stdout, verifyURL, result.UserCode, result.ExpiresIn)
+	} else {
+		fmt.Fprintf(os.Stdout, "Open this URL in your browser:\n  %s\n\n", verifyURL)
+		fmt.Fprintf(os.Stdout, "Enter code: %s\n\n", result.UserCode)
+	}
 
 	// Attempt to open the browser automatically — ignore failures.
 	openBrowser(verifyURL)
@@ -85,15 +93,23 @@ func runDeviceFlowLogin() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	spinner := display.NewSpinner()
-	spinner.Start("Waiting for browser authorization")
+	if board == nil {
+		spinner = display.NewSpinner()
+		spinner.Start("Waiting for browser authorization")
+	}
 
 	token, err := auth.PollForToken(ctx, client, result.DeviceCode, result.Interval)
 	if err != nil {
-		spinner.Fail("Authorization failed")
+		board.finish(false)
+		if spinner != nil {
+			spinner.Fail("Authorization failed")
+		}
 		return fmt.Errorf("authorization failed: %w", err)
 	}
-	spinner.Success("Authorized")
+	board.finish(true)
+	if spinner != nil {
+		spinner.Success("Authorized")
+	}
 
 	// Validate the token and fetch identity.
 	authedClient := api.NewClient(prefs.APIURL, token)
