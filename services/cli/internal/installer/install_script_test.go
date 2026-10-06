@@ -28,14 +28,16 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("Unix installer")
 	}
-	for _, shell := range []string{"bash", "sh"} {
-		t.Run(shell, func(t *testing.T) {
-			path, err := exec.LookPath(shell)
+	for _, shell := range []struct {
+		name string
+		args []string
+	}{
+		{"bash", nil}, {"sh", nil}, {"dash", nil}, {"busybox", []string{"sh"}},
+	} {
+		t.Run(shell.name, func(t *testing.T) {
+			path, err := exec.LookPath(shell.name)
 			if err != nil {
 				t.Skip(err)
-			}
-			if err := exec.Command(path, "-c", "set -o pipefail").Run(); err != nil {
-				t.Skip("the current Bash installer requires a shell with pipefail")
 			}
 			for _, tc := range []struct {
 				name        string
@@ -43,6 +45,8 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 				body        string
 				disconnect  bool
 				githubError bool
+				githubEmpty bool
+				githubNoTag bool
 				fallback    bool
 			}{
 				{name: "HTTP403", status: 403, fallback: true},
@@ -50,6 +54,8 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 				{name: "empty response", status: 200, fallback: true},
 				{name: "primary success", status: 200, body: "v0.0.1"},
 				{name: "both version endpoints fail", status: 403, githubError: true, fallback: true},
+				{name: "GitHub empty response", status: 403, githubEmpty: true, fallback: true},
+				{name: "GitHub missing tag", status: 403, githubNoTag: true, fallback: true},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					archive := fixtureArchive(t)
@@ -73,6 +79,13 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 						case "/github/latest":
 							if tc.githubError {
 								w.WriteHeader(403)
+								return
+							}
+							if tc.githubEmpty {
+								return
+							}
+							if tc.githubNoTag {
+								fmt.Fprint(w, `{"name":"no release tag"}`)
 								return
 							}
 							fmt.Fprint(w, `{"tag_name":"v0.0.1"}`)
@@ -104,7 +117,7 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 					install := t.TempDir()
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					defer cancel()
-					cmd := exec.CommandContext(ctx, path)
+					cmd := exec.CommandContext(ctx, path, shell.args...)
 					cmd.Stdin = strings.NewReader(body)
 					for _, e := range os.Environ() {
 						if !strings.HasPrefix(e, "TELARA_INSTALL_DIR=") && !strings.HasPrefix(e, "TELARA_VERSION=") {
@@ -116,7 +129,7 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 					mu.Lock()
 					got := append([]string{}, requests...)
 					mu.Unlock()
-					t.Logf("actual %s/curl: %v; requests %v\n%s", shell, runErr, got, out)
+					t.Logf("actual %s %v/curl: %v; requests %v\n%s", shell.name, shell.args, runErr, got, out)
 					github := false
 					for _, request := range got {
 						github = github || request == "/github/latest"
@@ -125,7 +138,7 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 						t.Errorf("GitHub version lookup = %t, want %t", github, tc.fallback)
 					}
 					binary := filepath.Join(install, "telara")
-					if tc.githubError {
+					if tc.githubError || tc.githubEmpty || tc.githubNoTag {
 						if runErr == nil {
 							t.Error("both version lookups failed but installer succeeded")
 						}
@@ -187,7 +200,8 @@ func TestInstallerBinaryFixture(t *testing.T) {
 }
 
 // An explicit live check is separate from the generic status regressions.
-// Only the reviewed current script or its pre-fix version may be executed.
+// It checks serving bytes, then runs reviewed local source against real public
+// metadata/download endpoints. It does not establish serving deployment.
 func TestPublicInstaller(t *testing.T) {
 	if !*publicInstaller || runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("pass -installer-public for current public Unix installer acceptance")
@@ -208,14 +222,15 @@ func TestPublicInstaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guarded := "  if ! VERSION=\"$(curl -fsSL \"${PRIMARY_BASE_URL}/latest-version\" 2>/dev/null)\"; then\n    VERSION=\"\"\n  fi"
-	original := strings.Replace(string(local), guarded, "  VERSION=\"$(curl -fsSL \"${PRIMARY_BASE_URL}/latest-version\" 2>/dev/null)\"", 1)
-	if !bytes.Equal(script, local) && string(script) != original {
+	// Exact previously reviewed public v0.1.44 script, retained until serving
+	// deployment catches up. An unexpected public edit requires fresh review.
+	const reviewedOriginal = "2cb4e86729bab2ffcfa283045f06976fdef816110709279ae2bafa58a0bd1c81"
+	if !bytes.Equal(script, local) && fmt.Sprintf("%x", sha256.Sum256(script)) != reviewedOriginal {
 		t.Fatal("public installer differs from reviewed local/current pre-fix script; inspect before execution")
 	}
 	install := t.TempDir()
-	cmd := exec.CommandContext(ctx, "bash")
-	cmd.Stdin = bytes.NewReader(script)
+	cmd := exec.CommandContext(ctx, "sh")
+	cmd.Stdin = bytes.NewReader(local)
 	for _, e := range os.Environ() {
 		if !strings.HasPrefix(e, "TELARA_INSTALL_DIR=") && !strings.HasPrefix(e, "TELARA_VERSION=") {
 			cmd.Env = append(cmd.Env, e)
@@ -223,7 +238,7 @@ func TestPublicInstaller(t *testing.T) {
 	}
 	cmd.Env = append(cmd.Env, "TELARA_INSTALL_DIR="+install, "HOME="+install)
 	out, err := cmd.CombinedOutput()
-	t.Logf("public installer version %s, script SHA256 %x, contains fix=%t\n%s", version, sha256.Sum256(script), bytes.Equal(script, local), out)
+	t.Logf("public installer version %s, served script SHA256 %x, matches local=%t; actual sh with local source SHA256 %x\n%s", version, sha256.Sum256(script), bytes.Equal(script, local), sha256.Sum256(local), out)
 	if err != nil {
 		t.Fatalf("public installer: %v", err)
 	}

@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Telara CLI installer
 # Usage: curl -fsSL https://get.telara.dev/install.sh | sh
@@ -43,7 +43,15 @@ if [ -z "$VERSION" ]; then
   fi
   if [ -z "$VERSION" ]; then
     echo "Primary version endpoint unavailable or empty, trying GitHub Releases..." >&2
-    VERSION="$(curl -fsSL "${GITHUB_API_URL}" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
+    if ! RELEASE_JSON="$(curl -fsSL "${GITHUB_API_URL}")"; then
+      echo "GitHub version endpoint unavailable." >&2
+      exit 1
+    fi
+    VERSION="$(printf '%s\n' "$RELEASE_JSON" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
+    if [ -z "$VERSION" ]; then
+      echo "GitHub Releases returned no version." >&2
+      exit 1
+    fi
   fi
 fi
 
