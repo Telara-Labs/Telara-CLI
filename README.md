@@ -5,6 +5,15 @@
 
 # Telara CLI
 
+```text
+████████╗███████╗██╗      █████╗ ██████╗  █████╗ 
+╚══██╔══╝██╔════╝██║     ██╔══██╗██╔══██╗██╔══██╗
+   ██║   █████╗  ██║     ███████║██████╔╝███████║
+   ██║   ██╔══╝  ██║     ██╔══██║██╔══██╗██╔══██║
+   ██║   ███████╗███████╗██║  ██║██║  ██║██║  ██║
+   ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+```
+
 The official command-line interface for [Telara](https://telara.dev). Connect your AI coding tools to your organization's MCP configurations — Claude Code, Cursor, Windsurf, and VS Code are configured automatically on login.
 
 [![npm](https://img.shields.io/npm/v/@telara-cli/cli?label=npm&color=7c3aed)](https://www.npmjs.com/package/@telara-cli/cli)
