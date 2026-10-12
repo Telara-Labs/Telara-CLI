@@ -121,6 +121,9 @@ func runTapPull(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if pins, _ := skillshare.PackagePins(p.Package); len(pins) > 0 {
+			fmt.Fprintf(os.Stderr, "note: %s uses %d other primitive(s); --out writes this package only. Pull without --out to install them too.\n", p.Ref(), len(pins))
+		}
 		if dryRun {
 			fmt.Printf("[dry-run] would write %s (%d bytes, %s) to %s\n", p.Ref(), len(p.Package), p.ArtifactDigest, out)
 			return nil
@@ -187,10 +190,24 @@ func installPrimitive(ctx context.Context, client *api.Client, ref, clientName s
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Primitive: %s\n", in.Ref())
-	fmt.Printf("Digest:    %s\n", in.ArtifactDigest)
-	if in.Attestation != nil {
-		fmt.Printf("Verified:  attestation signed by %s\n", in.Attestation.KeyID)
+	// Everything the primitive uses is fetched and verified first, so a
+	// closure that fails to verify installs nothing.
+	closure, err := skillshare.ResolveClosure(in, func(r string) (skillshare.PrimitiveInstall, error) {
+		return fetchPrimitive(ctx, client, r)
+	})
+	if err != nil {
+		return err
+	}
+	for _, m := range closure {
+		if m.Ref() == in.Ref() {
+			fmt.Printf("Primitive: %s\n", m.Ref())
+		} else {
+			fmt.Printf("Uses:      %s\n", m.Ref())
+		}
+		fmt.Printf("Digest:    %s\n", m.ArtifactDigest)
+		if m.Attestation != nil {
+			fmt.Printf("Verified:  attestation signed by %s\n", m.Attestation.KeyID)
+		}
 	}
 
 	targets, err := installTargets(clientName, scope)
@@ -202,26 +219,30 @@ func installPrimitive(ctx context.Context, client *api.Client, ref, clientName s
 	}
 	if dryRun {
 		for _, t := range targets {
-			fmt.Printf("\n[dry-run] would install to %s/%s/\n", t.dir, in.Name)
+			for _, m := range closure {
+				fmt.Printf("\n[dry-run] would install to %s/%s/\n", t.dir, m.Name)
+			}
 		}
 		return nil
 	}
 	for _, t := range targets {
-		res, werr := skillshare.InstallPrimitive(t.dir, in, force)
-		if werr != nil {
-			var notOurs *skillshare.ErrNotAPrimitiveFolder
-			if errors.As(werr, &notOurs) {
-				return fmt.Errorf("%w\n\nRe-run with --force to replace it", werr)
+		for _, m := range closure { // children first, the primitive last
+			res, werr := skillshare.InstallPrimitive(t.dir, m, force)
+			if werr != nil {
+				var notOurs *skillshare.ErrNotAPrimitiveFolder
+				if errors.As(werr, &notOurs) {
+					return fmt.Errorf("%w\n\nRe-run with --force to replace it", werr)
+				}
+				return werr
 			}
-			return werr
-		}
-		switch {
-		case res.Unchanged:
-			fmt.Printf("\nAlready installed %s -> %s\n", t.client, res.Path)
-		case res.Overwrote:
-			fmt.Printf("\nUpdated %s -> %s\n", t.client, res.Path)
-		default:
-			fmt.Printf("\nInstalled %s -> %s\n", t.client, res.Path)
+			switch {
+			case res.Unchanged:
+				fmt.Printf("\nAlready installed %s %s -> %s\n", t.client, m.Ref(), res.Path)
+			case res.Overwrote:
+				fmt.Printf("\nUpdated %s %s -> %s\n", t.client, m.Ref(), res.Path)
+			default:
+				fmt.Printf("\nInstalled %s %s -> %s\n", t.client, m.Ref(), res.Path)
+			}
 		}
 	}
 	var clients []string
