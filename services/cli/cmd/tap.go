@@ -46,7 +46,8 @@ var tapPullCmd = &cobra.Command{
 is given, and install it where your agent client loads skills. The agent runs
 it with the TAP runner's tap_run tool.
 
-The package's digest is verified before anything is written. --out writes the
+The package's digest and its signed attestation are verified before anything
+is written; an unsigned or mismatched package is refused. --out writes the
 verified package file instead of installing it.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTapPull,
@@ -147,7 +148,36 @@ func fetchPrimitive(ctx context.Context, client *api.Client, ref string) (skills
 		Publisher: pkg.Publisher, Name: pkg.Name, Version: pkg.Version,
 		ArtifactDigest: pkg.ArtifactDigest, Package: raw,
 	}
-	return p, p.Verify()
+	if err := p.Verify(); err != nil {
+		return p, err
+	}
+	// The digest above is the registry's own word. The attestation is what
+	// proves the registry's key signed this exact package.
+	verified, err := verifyPackageAttestation(ctx, client, p, pkg.Attestation)
+	if err != nil {
+		return p, err
+	}
+	p.Attestation = verified
+	return p, nil
+}
+
+// verifyPackageAttestation checks the package's attestation against the
+// registry's published signing keys.
+func verifyPackageAttestation(ctx context.Context, client *api.Client, p skillshare.PrimitiveInstall, att *api.PrimitiveAttestation) (*skillshare.VerifiedAttestation, error) {
+	if att == nil {
+		return skillshare.VerifyAttestation(p, nil, nil)
+	}
+	path, err := keyCachePath()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", p.Ref(), err)
+	}
+	keys, err := signingKeysFor(ctx, path, client.BaseURL, att.SigningKeyVersion, time.Now(), fetchSigningKeysFrom(client))
+	if err != nil {
+		return nil, fmt.Errorf("%s: cannot verify the attestation: %w", p.Ref(), err)
+	}
+	return skillshare.VerifyAttestation(p, &skillshare.SignedAttestation{
+		SignedPayloadB64: att.SignedPayload, SignatureB64: att.Signature, SigningKeyVersion: att.SigningKeyVersion,
+	}, keys)
 }
 
 // installPrimitive fetches a promoted primitive and writes it as a skill
@@ -159,6 +189,9 @@ func installPrimitive(ctx context.Context, client *api.Client, ref, clientName s
 	}
 	fmt.Printf("Primitive: %s\n", in.Ref())
 	fmt.Printf("Digest:    %s\n", in.ArtifactDigest)
+	if in.Attestation != nil {
+		fmt.Printf("Verified:  attestation signed by %s\n", in.Attestation.KeyID)
+	}
 
 	targets, err := installTargets(clientName, scope)
 	if err != nil {

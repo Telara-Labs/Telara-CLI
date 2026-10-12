@@ -30,6 +30,42 @@ type PrimitivePackage struct {
 	// PackageBase64 is the package; decoding it is the installer's job, so the
 	// digest is checked against exactly the bytes that are written.
 	PackageBase64 string `json:"package_base64"`
+	// Attestation is the publish attestation the registry signed. Nil when the
+	// registry sent none, which the installer treats as unverifiable.
+	Attestation *PrimitiveAttestation `json:"attestation,omitempty"`
+}
+
+// PrimitiveAttestation is the signed publish attestation. SignedPayload is
+// base64 of the exact bytes the signature covers; Signature is base64 of the
+// raw Ed25519 signature; SigningKeyVersion names the published key that made it.
+type PrimitiveAttestation struct {
+	Validated         bool   `json:"validated"`
+	ValidatorVersion  string `json:"validator_version"`
+	ScanStatus        string `json:"scan_status"`
+	Signature         string `json:"signature"`
+	SigningKeyVersion string `json:"signing_key_version"`
+	SignedAt          string `json:"signed_at"`
+	SignedPayload     string `json:"signed_payload"`
+}
+
+// PrimitiveSigningKey is one version of the key that signs attestations.
+type PrimitiveSigningKey struct {
+	KeyID        string `json:"key_id"`
+	Version      string `json:"version"`
+	Alg          string `json:"alg"`
+	PublicKeyB64 string `json:"public_key_b64"`
+}
+
+// GetPrimitiveSigningKeys returns every published version of the attestation
+// signing key.
+func (c *Client) GetPrimitiveSigningKeys(ctx context.Context) ([]PrimitiveSigningKey, error) {
+	var resp struct {
+		Keys []PrimitiveSigningKey `json:"keys"`
+	}
+	if err := c.do(ctx, "GET", "/v1/cli/primitives/signing-keys", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Keys, nil
 }
 
 // ListPromotedPrimitives returns the primitives this tenant distributes.

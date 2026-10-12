@@ -59,6 +59,9 @@ type PrimitiveInstall struct {
 	Version        string
 	ArtifactDigest string
 	Package        []byte // gzip tar, as published
+	// Attestation is the verified attestation to write beside the package.
+	// Nil installs without one (the runner then treats the package as unsigned).
+	Attestation *VerifiedAttestation
 }
 
 // Ref is publisher/name@version.
@@ -121,6 +124,9 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 					return nil, err
 				}
 			}
+			if err := writeAttestation(dest, p.Attestation); err != nil {
+				return nil, err
+			}
 			return res, nil
 		case !ok && !force:
 			return nil, &ErrNotAPrimitiveFolder{Path: dest}
@@ -154,6 +160,9 @@ func InstallPrimitive(root string, p PrimitiveInstall, force bool) (*PrimitiveIn
 		return nil, err
 	}
 	if err := writeRunnerMarker(stage, p); err != nil {
+		return nil, err
+	}
+	if err := writeAttestation(stage, p.Attestation); err != nil {
 		return nil, err
 	}
 
