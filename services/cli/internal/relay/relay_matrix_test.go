@@ -167,9 +167,12 @@ func TestRelaySteadyStateLatency(t *testing.T) {
 }
 
 // TestRelayForwardsServerInitiatedNotifications. The everything server sends
-// notifications/tools/list_changed unprompted. A relay that only understood
+// notifications/message unprompted once simulated logging is switched on (every
+// few seconds, with no request outstanding). A relay that only understood
 // request/response pairing would drop or stall on it, and the client would
-// silently lose server-pushed state.
+// silently lose server-pushed state. The earlier premise, that the server
+// pushes a tools list_changed notification on its own, only held for one
+// pipelined handshake ordering and is not a stable behaviour of the upstream.
 func TestRelayForwardsServerInitiatedNotifications(t *testing.T) {
 	command, args := requireEverythingServer(t)
 
@@ -186,8 +189,27 @@ func TestRelayForwardsServerInitiatedNotifications(t *testing.T) {
 	initFrame, initializedFrame := initializeFrames()
 	session.roundTrip(1, initFrame)
 	session.notify(initializedFrame)
-	// tools/list provokes the server's list_changed notification path.
-	session.roundTrip(2, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	// Switching simulated logging on makes the server push notifications with no
+	// request outstanding.
+	session.roundTrip(2, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"toggle-simulated-logging","arguments":{}}}`)
+	// The server pushes the first notification on a timer. Stay connected until
+	// it arrives (bounded), as a real client does; closing at once races the
+	// server's own shutdown.
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		seen := false
+		for _, o := range observed {
+			if o.Direction == FromServer && o.Method == "notifications/message" {
+				seen = true
+			}
+		}
+		mu.Unlock()
+		if seen {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	stats := session.close()
 
 	mu.Lock()
@@ -195,7 +217,7 @@ func TestRelayForwardsServerInitiatedNotifications(t *testing.T) {
 
 	var sawNotification bool
 	for _, o := range observed {
-		if o.Direction == FromServer && o.Method == "notifications/tools/list_changed" {
+		if o.Direction == FromServer && o.Method == "notifications/message" {
 			sawNotification = true
 		}
 	}
@@ -207,7 +229,7 @@ func TestRelayForwardsServerInitiatedNotifications(t *testing.T) {
 		t.Fatalf("server-initiated notification was not relayed or observed; saw %v", methods)
 	}
 	if stats.ServerFrames < 3 {
-		t.Fatalf("expected at least initialize, notification and tools/list frames, got %d", stats.ServerFrames)
+		t.Fatalf("expected at least initialize, tools/call and notification frames, got %d", stats.ServerFrames)
 	}
 	t.Logf("relayed %d server frames including an unsolicited notification", stats.ServerFrames)
 }

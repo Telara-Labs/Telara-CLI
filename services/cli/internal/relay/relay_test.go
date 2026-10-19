@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -42,6 +44,85 @@ func requireMCPServer(t *testing.T) (string, []string, string) {
 	return npx, []string{"-y", "@modelcontextprotocol/server-filesystem@latest", sandbox}, sandbox
 }
 
+// A real MCP client stays connected until it has the answers it asked for.
+// Closing stdin straight after the last request races an upstream server that
+// answers asynchronously and exits on EOF (server-filesystem 2.0.0 does), so
+// the tool result never arrives and the test measures the race, not the relay.
+// heldOpenInput delivers the frames, then keeps the input open until every
+// request id has a response or a bounded wait passes.
+type heldOpenInput struct {
+	data *strings.Reader
+	done chan struct{}
+	once sync.Once
+	want int
+	got  int
+	mu   sync.Mutex
+}
+
+func newHeldOpenInput(input string) *heldOpenInput {
+	want := 0
+	for _, line := range strings.Split(input, "\n") {
+		var f struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if json.Unmarshal([]byte(line), &f) == nil && len(f.ID) > 0 && f.Method != "" {
+			want++
+		}
+	}
+	return &heldOpenInput{data: strings.NewReader(input), done: make(chan struct{}), want: want}
+}
+
+func (h *heldOpenInput) Read(p []byte) (int, error) {
+	if n, err := h.data.Read(p); n > 0 || err == nil {
+		return n, nil
+	}
+	select {
+	case <-h.done:
+	case <-time.After(60 * time.Second):
+	}
+	return 0, io.EOF
+}
+
+// Write counts response frames (frames with an id and no method) leaving the server.
+func (h *heldOpenInput) observe(frame []byte) {
+	var f struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	if json.Unmarshal(frame, &f) != nil || len(f.ID) == 0 || f.Method != "" {
+		return
+	}
+	h.mu.Lock()
+	h.got++
+	finished := h.got >= h.want
+	h.mu.Unlock()
+	if finished {
+		h.once.Do(func() { close(h.done) })
+	}
+}
+
+// frameCounter is the output side: it tees whole frames to the held-open input.
+type frameCounter struct {
+	w    io.Writer
+	in   *heldOpenInput
+	rest []byte
+}
+
+func (c *frameCounter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.rest = append(c.rest, p[:n]...)
+	for {
+		i := bytes.IndexByte(c.rest, '\n')
+		if i < 0 {
+			break
+		}
+		c.in.observe(c.rest[:i])
+		c.rest = c.rest[i+1:]
+	}
+	return n, err
+}
+
 // session is a realistic MCP exchange: handshake, capability discovery, then a
 // tool call that returns file content.
 func session(sandbox string) string {
@@ -64,9 +145,10 @@ func runDirect(t *testing.T, command string, args []string, input string) string
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.Stdin = strings.NewReader(input)
+	in := newHeldOpenInput(input)
+	cmd.Stdin = in
 	var out bytes.Buffer
-	cmd.Stdout = &out
+	cmd.Stdout = &frameCounter{w: &out, in: in}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
@@ -94,7 +176,8 @@ func runRelayed(t *testing.T, command string, args []string, input string, obser
 
 	relay := &Relay{Command: command, Args: args, Observer: observer, ServerStderr: &bytes.Buffer{}}
 	var out bytes.Buffer
-	stats, err := relay.Run(ctx, strings.NewReader(input), &out)
+	in := newHeldOpenInput(input)
+	stats, err := relay.Run(ctx, in, &frameCounter{w: &out, in: in})
 	if err != nil && !contains(err.Error(), "server exited") {
 		t.Fatalf("relayed run: %v", err)
 	}
