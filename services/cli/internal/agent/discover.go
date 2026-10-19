@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 )
 
 // FetchToolNames asks the MCP server which tools it actually serves.
@@ -40,7 +42,7 @@ func FetchToolNames(ctx context.Context, mcpURL, bearer string) ([]string, error
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json, text/event-stream")
 
-	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
+	response, err := (&http.Client{Timeout: 15 * time.Second, Transport: api.NewTransport()}).Do(request)
 	if err != nil {
 		return nil, err
 	}

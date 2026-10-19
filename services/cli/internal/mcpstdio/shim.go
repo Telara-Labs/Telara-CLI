@@ -46,6 +46,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 )
 
 // HeaderConversation carries the process-scoped conversation handle to the
@@ -552,7 +554,11 @@ func truncate(s string, n int) string {
 // deadline here would cancel real work. The per-connection timeouts below still
 // fail a dead endpoint quickly.
 func DefaultHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := api.NewTransport().(*http.Transport)
+	if !ok {
+		base = http.DefaultTransport.(*http.Transport)
+	}
+	transport := base.Clone()
 	transport.ResponseHeaderTimeout = 0
 	transport.TLSHandshakeTimeout = 15 * time.Second
 	transport.IdleConnTimeout = 90 * time.Second

@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/tlstest"
 )
 
 func TestFetchToolNames_ReturnsWhatTheServerServes(t *testing.T) {
@@ -69,5 +72,29 @@ func TestFetchToolNames_RejectsAnEmptyList(t *testing.T) {
 
 	if _, err := FetchToolNames(context.Background(), server.URL+"/v1/mcp", "k"); err == nil {
 		t.Fatal("expected an error for an empty tool list")
+	}
+}
+
+// tools/list discovery trusts the configured private CA like every other CLI
+// request (TENG-3499) and still rejects an untrusted CA.
+func TestFetchToolNames_PrivateCATrust(t *testing.T) {
+	ca := tlstest.NewCA(t, "telara-private-ca")
+	srv := ca.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"telara_probe"}]}}`)
+	}), "127.0.0.1")
+
+	t.Setenv("TELARA_CA_CERT_PATH", "")
+	if _, err := FetchToolNames(context.Background(), srv.URL, "k"); !tlstest.IsVerifyFailure(err) {
+		t.Fatalf("without the CA want certificate verification failure, got %v", err)
+	}
+	t.Setenv("TELARA_CA_CERT_PATH", ca.WriteBundle(t))
+	names, err := FetchToolNames(context.Background(), srv.URL, "k")
+	if err != nil || len(names) != 1 || names[0] != "telara_probe" {
+		t.Fatalf("names %v err %v", names, err)
+	}
+	t.Setenv("TELARA_CA_CERT_PATH", tlstest.NewCA(t, "other").WriteBundle(t))
+	if _, err := FetchToolNames(context.Background(), srv.URL, "k"); err == nil {
+		t.Fatal("an untrusted CA must be rejected")
 	}
 }

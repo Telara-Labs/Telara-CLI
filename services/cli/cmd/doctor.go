@@ -166,7 +166,7 @@ func checkAuth() checkResult {
 
 // checkConnectivity does a quick GET to <apiURL>/health.
 func checkConnectivity(apiURL string) checkResult {
-	hc := &http.Client{Timeout: 5 * time.Second}
+	hc := &http.Client{Timeout: 5 * time.Second, Transport: api.NewTransport()}
 	healthURL := strings.TrimRight(apiURL, "/") + "/health"
 
 	start := time.Now()
