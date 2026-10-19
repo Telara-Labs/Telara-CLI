@@ -25,14 +25,20 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	os.Stdout = w
 
+	// Drain while fn runs: a command that prints more than the pipe buffer
+	// holds would otherwise block in its own write and the test would hang.
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+
 	fn()
 
 	_ = w.Close()
 	os.Stdout = orig
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	return buf.String()
+	return <-done
 }
 
 // setupTestPrefs overrides the global prefs to point at the given API URL and
