@@ -14,8 +14,10 @@ import (
 
 // TENG-2760. `telara scan` quarantines the exact bytes an administrator withdrew, and
 // `telara skill install` used to put them straight back into the load path. These drive
-// the real install code, the real WriteSkill and the real Enforce, with a fake registry
-// that returns a chosen withdrawn list.
+// the real install code and the real WriteSkill into temporary target directories, with a
+// fake registry that returns a chosen withdrawn list. They read no environment value and
+// touch no real home directory. The full install, withdraw, scan, reinstall sequence runs
+// in the isolated container fixture, not here.
 
 type fakeDenied struct {
 	list []skillshare.DeniedSkill
@@ -91,51 +93,5 @@ func TestInstallStillInstallsWhatWasNeverWithdrawnAndWhatWasLifted(t *testing.T)
 		if err != nil || string(got) != admissionBody {
 			t.Fatalf("%s: the installed bytes must be exact: %v", name, err)
 		}
-	}
-}
-
-// The whole C29-01 sequence in one process: install, an administrator withdraws the bytes,
-// scan quarantines them without deleting, install is refused, the quarantined copy is
-// intact, and once the withdrawal is lifted install works again.
-func TestWithdrawnSkillStaysOutOfTheLoadPathAndQuarantineIsPreserved(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if got, err := os.UserHomeDir(); err != nil || got != home {
-		t.Skipf("this platform does not take HOME from the environment: %q %v", got, err)
-	}
-	root := filepath.Join(home, ".claude", "skills")
-	detail := admissionDetail(admissionBody)
-	targets := []installTarget{{client: "claude-code", dir: root}}
-
-	if err := installSharedSkill(context.Background(), fakeDenied{}, detail, targets, false, false); err != nil {
-		t.Fatalf("first install: %v", err)
-	}
-	withdrawn := []skillshare.DeniedSkill{{ContentHash: detail.ContentHash, SkillName: detail.Name, Reason: "synthetic C29 quarantine fixture"}}
-	actions, err := skillshare.Enforce(home, withdrawn)
-	if err != nil || len(actions) != 1 {
-		t.Fatalf("enforcement must quarantine the one installed copy: %v %v", actions, err)
-	}
-	if _, statErr := os.Stat(skillFile(root)); !os.IsNotExist(statErr) {
-		t.Fatal("the withdrawn skill must have left the load path")
-	}
-	quarantined := filepath.Join(actions[0].To, "SKILL.md")
-	if kept, readErr := os.ReadFile(quarantined); readErr != nil || string(kept) != admissionBody {
-		t.Fatalf("quarantine must keep byte-identical content: %v", readErr)
-	}
-
-	// The reinstall that used to succeed.
-	if err := installSharedSkill(context.Background(), fakeDenied{list: withdrawn}, detail, targets, false, false); err == nil {
-		t.Fatal("install must refuse the bytes the scan just quarantined")
-	}
-	if _, statErr := os.Stat(skillFile(root)); !os.IsNotExist(statErr) {
-		t.Fatal("the withdrawn skill must not be back in the load path")
-	}
-	if kept, readErr := os.ReadFile(quarantined); readErr != nil || string(kept) != admissionBody {
-		t.Fatal("a refused install must leave the quarantined copy untouched")
-	}
-
-	// Reversible: once the administrator lifts the removal, install works again.
-	if err := installSharedSkill(context.Background(), fakeDenied{}, detail, targets, false, false); err != nil {
-		t.Fatalf("after the removal is lifted, install must work: %v", err)
 	}
 }
