@@ -486,7 +486,8 @@ func runSkillInstall(cmd *cobra.Command, args []string) error {
 	if strings.Contains(ref, "/") {
 		return installPrimitive(ctx, api.NewClient(endpoint, token), ref, clientName, scope, force, dryRun)
 	}
-	detail, err := api.NewClient(endpoint, token).GetSharedSkill(ctx, ref)
+	registry := api.NewClient(endpoint, token)
+	detail, err := registry.GetSharedSkill(ctx, ref)
 	if err != nil {
 		return fmt.Errorf("fetch skill %q: %w", ref, err)
 	}
@@ -512,6 +513,32 @@ func runSkillInstall(cmd *cobra.Command, args []string) error {
 	}
 	if len(targets) == 0 {
 		return fmt.Errorf("no agent client with a skills directory was detected")
+	}
+
+	return installSharedSkill(ctx, registry, detail, targets, force, dryRun)
+}
+
+// deniedLister is the one part of the registry client that install admission needs.
+type deniedLister interface {
+	ListDeniedSkills(ctx context.Context) ([]skillshare.DeniedSkill, error)
+}
+
+// installSharedSkill admits one fetched skill and then writes it into each target.
+//
+// Admission comes first and fails CLOSED (TENG-2760). `telara scan` quarantines the exact
+// bytes an administrator withdrew, and this is what stops install from putting them
+// straight back into the load path. If the withdrawn list cannot be read, nothing is
+// installed: a skill is instruction text an agent obeys, so an install that cannot rule
+// out a withdrawal must not proceed. --force overrides a local modification and nothing
+// else, it never overrides a withdrawal. The dry run is admitted too, so it does not
+// promise an install that would be refused.
+func installSharedSkill(ctx context.Context, registry deniedLister, detail *api.SharedSkillDetail, targets []installTarget, force, dryRun bool) error {
+	denied, err := registry.ListDeniedSkills(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot confirm that %q was not withdrawn by your administrator (%w); nothing was installed", detail.Name, err)
+	}
+	if err := skillshare.AdmitInstall(detail.Name, detail.ContentHash, detail.Body, denied); err != nil {
+		return err
 	}
 
 	if dryRun {
