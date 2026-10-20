@@ -535,7 +535,7 @@ type deniedLister interface {
 func installSharedSkill(ctx context.Context, registry deniedLister, detail *api.SharedSkillDetail, targets []installTarget, force, dryRun bool) error {
 	denied, err := registry.ListDeniedSkills(ctx)
 	if err != nil {
-		return fmt.Errorf("cannot confirm that %q was not withdrawn by your administrator (%w); nothing was installed", detail.Name, err)
+		return fmt.Errorf("cannot confirm that %q was not withdrawn by your administrator, so nothing was installed (%w)", detail.Name, err)
 	}
 	if err := skillshare.AdmitInstall(detail.Name, detail.ContentHash, detail.Body, denied); err != nil {
 		return err

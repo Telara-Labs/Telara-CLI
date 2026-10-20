@@ -23,11 +23,11 @@ type ErrInstallDenied struct {
 }
 
 func (e *ErrInstallDenied) Error() string {
-	msg := fmt.Sprintf("refusing to install %q: your administrator withdrew these exact bytes (%s)", e.Name, e.ContentHash)
+	msg := fmt.Sprintf("Refusing to install %q. Your administrator withdrew these exact bytes (%s).", e.Name, e.ContentHash)
 	if r := strings.TrimSpace(e.Reason); r != "" {
-		msg += ": " + r
+		msg += fmt.Sprintf(" The reason given was %q.", r)
 	}
-	return msg + ". Ask an administrator to lift the removal if it was a mistake"
+	return msg + " Ask an administrator to lift the removal if it was a mistake."
 }
 
 // AdmitInstall refuses an install whose bytes are on the active deny list.
