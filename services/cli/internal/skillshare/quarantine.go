@@ -47,6 +47,9 @@ type QuarantineAction struct {
 	From        string `json:"from"`
 	To          string `json:"to"`
 	Reason      string `json:"reason,omitempty"`
+	// Retained is where the original bytes were kept when the skill could not be
+	// renamed into place (a different filesystem). Empty after a plain move.
+	Retained string `json:"retained,omitempty"`
 }
 
 // QuarantineRoot is where withdrawn skills go.
@@ -213,12 +216,13 @@ func quarantineSkillDir(homeDir, root, from string, entry DeniedSkill) (*Quarant
 		}
 		to = fmt.Sprintf("%s-%d", base, i)
 	}
-	if err := os.Rename(from, to); err != nil {
+	retained, err := moveDir(from, to, root)
+	if err != nil {
 		return nil, fmt.Errorf("move skill to quarantine: %w", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(to, "REMOVED.md"),
-		[]byte(removalNote(name, entry)), 0o644); err != nil {
+		[]byte(removalNote(name, entry, retained)), 0o644); err != nil {
 		// The move already happened and is the part that matters. A missing
 		// note is worse than useless silence, so report it rather than
 		// pretending the enforcement was clean.
@@ -227,7 +231,7 @@ func quarantineSkillDir(homeDir, root, from string, entry DeniedSkill) (*Quarant
 
 	return &QuarantineAction{
 		SkillName: name, ContentHash: entry.ContentHash,
-		From: from, To: to, Reason: entry.Reason,
+		From: from, To: to, Reason: entry.Reason, Retained: retained,
 	}, nil
 }
 
@@ -237,7 +241,7 @@ func quarantineSkillDir(homeDir, root, from string, entry DeniedSkill) (*Quarant
 // what happened, who decided, and what to do about it. A removal with no
 // explanation invites re-creating the file, which is how enforcement turns into
 // a loop nobody understands.
-func removalNote(name string, entry DeniedSkill) string {
+func removalNote(name string, entry DeniedSkill, retained string) string {
 	var b strings.Builder
 	b.WriteString("# " + name + " was removed by your administrator\n\n")
 	b.WriteString("This skill is no longer active. It was moved here so your agent stops\n")
@@ -253,6 +257,10 @@ func removalNote(name string, entry DeniedSkill) string {
 	}
 	if entry.ContentHash != "" {
 		b.WriteString("Content hash: " + entry.ContentHash + "\n")
+	}
+	if retained != "" {
+		b.WriteString("\nThe original files were left at " + retained + " because they\n")
+		b.WriteString("are on a different disk. They no longer load. Delete them when you choose.\n")
 	}
 	b.WriteString("\n## If you still need it\n\n")
 	b.WriteString("Ask an administrator to reinstate it. Removals are kept as records\n")

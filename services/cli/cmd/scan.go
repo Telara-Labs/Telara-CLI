@@ -118,8 +118,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 	//
 	// Skipped on --dry-run: that flag promises to change nothing, and moving
 	// somebody's files would be the largest possible violation of it.
+	var enforcement *enforcementReport
 	if !dryRun {
-		enforceRemovals(endpoint, token, asJSON)
+		enforcement = enforceRemovals(endpoint, token, asJSON)
 	}
 
 	// A wide terminal watches a radar while the machine is scanned. The
@@ -206,6 +207,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 			"servers":  len(report.ResourceAssertions),
 			"scanId":   report.ScanID,
 			"response": resp,
+		}
+		if enforcement != nil {
+			out["enforcement"] = enforcement
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -313,39 +317,58 @@ func installationKey() string {
 // is one scan interval. The MCP path has no such window — telara_skill_load
 // re-resolves on every call and caches nothing — which is why loading a skill
 // over MCP is the stronger surface.
-func enforceRemovals(endpoint, token string, asJSON bool) {
+func enforceRemovals(endpoint, token string, asJSON bool) *enforcementReport {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	rep := &enforcementReport{Quarantined: []skillshare.QuarantineAction{}, Errors: []string{}}
+	// Warnings go to stderr in every mode. With --json stdout carries the report,
+	// so stderr is free, and a machine caller reads the same facts in rep.
+	warn := func(format string, a ...interface{}) {
+		msg := fmt.Sprintf(format, a...)
+		rep.Complete = false
+		rep.Errors = append(rep.Errors, msg)
+		fmt.Fprintf(os.Stderr, "WARNING: %s\n", msg)
+	}
+
 	denied, err := api.NewClient(endpoint, token).ListDeniedSkills(ctx)
 	if err != nil {
-		if !asJSON {
-			fmt.Fprintf(os.Stderr,
-				"WARNING: could not fetch withdrawn skills (%v); nothing was quarantined this run\n", err)
-		}
-		return
+		warn("could not fetch withdrawn skills (%v); nothing was quarantined this run", err)
+		return rep
 	}
+	rep.Checked = true
+	rep.Complete = true
 	if len(denied) == 0 {
-		return
+		return rep
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		if !asJSON {
-			fmt.Fprintf(os.Stderr, "WARNING: cannot resolve home directory; nothing was quarantined\n")
-		}
-		return
+		warn("cannot resolve home directory; nothing was quarantined")
+		return rep
 	}
 
 	actions, err := skillshare.Enforce(home, denied)
 	// Report what DID happen before reporting the failure: a partial enforcement
 	// that says only "error" reads as though nothing moved, when files did.
 	for _, a := range actions {
+		rep.Quarantined = append(rep.Quarantined, a)
 		if !asJSON {
 			fmt.Fprintf(os.Stderr, "Quarantined %q (withdrawn by your administrator) -> %s\n", a.SkillName, a.To)
 		}
 	}
-	if err != nil && !asJSON {
-		fmt.Fprintf(os.Stderr, "WARNING: %v\n", err)
+	if err != nil {
+		warn("%v", err)
 	}
+	return rep
+}
+
+// enforcementReport is what a scan says about removal enforcement. Complete is
+// true only when the deny list was fetched and every withdrawn skill found was
+// moved. A machine reading --json must not have to infer success from silence.
+type enforcementReport struct {
+	Checked     bool                          `json:"checked"`
+	Complete    bool                          `json:"complete"`
+	Quarantined []skillshare.QuarantineAction `json:"quarantined"`
+	Errors      []string                      `json:"errors"`
 }
