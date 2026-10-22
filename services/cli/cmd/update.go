@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +28,16 @@ var (
 	githubAPILatestURL       = "https://api.github.com/repos/Telara-Labs/Telara-CLI/releases/latest"
 	githubReleaseDownloadURL = "https://github.com/Telara-Labs/Telara-CLI/releases/download"
 )
+
+// checksumsFilename is the checksum file .goreleaser.yaml publishes with every release.
+const checksumsFilename = "telara_checksums.txt"
+
+// updateHTTPClient bounds every update request. A stalled connection would
+// otherwise hang the command forever.
+var updateHTTPClient = &http.Client{Timeout: 5 * time.Minute}
+
+// executablePath names the binary update replaces. Tests point it at a copy.
+var executablePath = os.Executable
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -43,7 +56,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	spinner.Stop()
 
 	current := version.Version
-	if current == latest || (current == "dev" && latest == "") || latest == current {
+	if current == "dev" && latest == "" {
+		display.PrintSuccess(fmt.Sprintf("Already on latest version (%s)", current))
+		return nil
+	}
+	newer, err := versionNewer(latest, current)
+	if err != nil {
+		return fmt.Errorf("refusing to update, cannot compare %q with the installed %q: %w", latest, current, err)
+	}
+	if !newer {
 		display.PrintSuccess(fmt.Sprintf("Already on latest version (%s)", current))
 		return nil
 	}
@@ -98,13 +119,29 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		board.set(func(b *updateBoard) { b.downloaded = true })
 	}
 
+	// The release publishes telara_checksums.txt. An archive that is not listed
+	// there, or does not match, is never extracted or installed.
+	if board == nil {
+		spinner.Start("Verifying checksum")
+	}
+	if err := verifyArchiveChecksum(fmt.Sprintf("%s/%s/%s", githubReleaseDownloadURL, tag, checksumsFilename), archivePath, filename); err != nil {
+		if board == nil {
+			spinner.Fail("Verification failed")
+		}
+		fail("The download did not verify")
+		return fmt.Errorf("refusing to install the update. %w", err)
+	}
+	if board == nil {
+		spinner.Success("Verified")
+	}
+
 	newBinaryPath := filepath.Join(tmpDir, binaryName())
 	if err := extractBinary(archivePath, newBinaryPath); err != nil {
 		fail("Could not extract the download")
 		return fmt.Errorf("failed to extract binary: %w", err)
 	}
 
-	execPath, err := os.Executable()
+	execPath, err := executablePath()
 	if err != nil {
 		fail("Could not find the installed copy")
 		return fmt.Errorf("failed to determine executable path: %w", err)
@@ -160,7 +197,7 @@ func binaryName() string {
 // downloadFile saves url to dest, telling each progress callback how many
 // bytes have arrived of how many (total is -1 when the server does not say).
 func downloadFile(url, dest string, progress ...func(done, total int64)) error {
-	resp, err := http.Get(url) //nolint:noctx
+	resp, err := updateHTTPClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -290,7 +327,7 @@ type githubRelease struct {
 }
 
 func fetchLatestVersionFromGitHub() (string, error) {
-	resp, err := http.Get(githubAPILatestURL) //nolint:noctx
+	resp, err := updateHTTPClient.Get(githubAPILatestURL)
 	if err != nil {
 		return "", fmt.Errorf("GitHub API request failed: %w", err)
 	}
@@ -380,4 +417,93 @@ func (c *countingReader) Read(p []byte) (int, error) {
 		f(c.done, c.total)
 	}
 	return n, err
+}
+
+// versionNewer reports whether latest is a later release than current by
+// numeric dotted comparison. A current of "dev" is older than any release. A
+// latest that is not a dotted number is an error, never an update.
+func versionNewer(latest, current string) (bool, error) {
+	l, err := parseDottedVersion(latest)
+	if err != nil {
+		return false, err
+	}
+	if current == "dev" {
+		return true, nil
+	}
+	c, err := parseDottedVersion(current)
+	if err != nil {
+		return false, err
+	}
+	for i := 0; i < len(l) || i < len(c); i++ {
+		var a, b int
+		if i < len(l) {
+			a = l[i]
+		}
+		if i < len(c) {
+			b = c[i]
+		}
+		if a != b {
+			return a > b, nil
+		}
+	}
+	return false, nil
+}
+
+func parseDottedVersion(v string) ([]int, error) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if v == "" {
+		return nil, fmt.Errorf("empty version")
+	}
+	parts := strings.Split(v, ".")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("version %q is not a dotted number", v)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// verifyArchiveChecksum downloads the release checksum file and compares the
+// SHA-256 of archivePath with the entry for filename.
+func verifyArchiveChecksum(checksumsURL, archivePath, filename string) error {
+	dir, err := os.MkdirTemp("", "telara-checksums-*")
+	if err != nil {
+		return fmt.Errorf("create temp directory: %w", err)
+	}
+	defer os.RemoveAll(dir)
+	listPath := filepath.Join(dir, checksumsFilename)
+	if err := downloadFile(checksumsURL, listPath); err != nil {
+		return fmt.Errorf("could not fetch %s: %w", checksumsFilename, err)
+	}
+	list, err := os.ReadFile(listPath)
+	if err != nil {
+		return err
+	}
+	want := ""
+	for _, line := range strings.Split(string(list), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == filename {
+			want = strings.ToLower(fields[0])
+			break
+		}
+	}
+	if want == "" {
+		return fmt.Errorf("%s has no entry for %s", checksumsFilename, filename)
+	}
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != want {
+		return fmt.Errorf("checksum mismatch for %s, the download is %s but the release lists %s", filename, got, want)
+	}
+	return nil
 }

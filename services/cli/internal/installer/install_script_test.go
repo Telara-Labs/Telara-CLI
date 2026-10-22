@@ -94,6 +94,10 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 								w.WriteHeader(403)
 								return
 							}
+							if strings.HasSuffix(r.URL.Path, "/telara_checksums.txt") {
+								fmt.Fprintf(w, "%x  telara_0.0.1_%s_%s.tar.gz\n", sha256.Sum256(archive), runtime.GOOS, installerArch())
+								return
+							}
 							w.Write(archive)
 						}
 					}))
@@ -158,6 +162,13 @@ func TestInstallScriptVersionFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+func installerArch() string {
+	if runtime.GOARCH == "amd64" {
+		return "amd64"
+	}
+	return "arm64"
 }
 
 func fixtureArchive(t *testing.T) []byte {
@@ -254,4 +265,56 @@ func TestPublicInstaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("public installed CLI SHA256 %x; %s", sha256.Sum256(b), probe)
+}
+
+// An archive that does not match the release's published checksum is never
+// installed (UIX-G05).
+func TestInstallScriptRefusesAChecksumMismatch(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Unix installer")
+	}
+	archive := fixtureArchive(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/primary/latest-version":
+			fmt.Fprint(w, "v0.0.1")
+		case strings.HasSuffix(r.URL.Path, "/telara_checksums.txt"):
+			fmt.Fprintf(w, "%x  telara_0.0.1_%s_%s.tar.gz\n", sha256.Sum256([]byte("a different archive")), runtime.GOOS, installerArch())
+		default:
+			w.Write(archive)
+		}
+	}))
+	defer server.Close()
+	script, err := os.ReadFile("../../../../scripts/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(script)
+	for from, to := range map[string]string{
+		`PRIMARY_BASE_URL="https://get.telara.dev"`:                          `PRIMARY_BASE_URL="` + server.URL + `/primary"`,
+		`GITHUB_DOWNLOAD_URL="https://github.com/${REPO}/releases/download"`: `GITHUB_DOWNLOAD_URL="` + server.URL + `/github/download"`,
+	} {
+		if strings.Count(body, from) != 1 {
+			t.Fatalf("installer endpoint constant changed: %s", from)
+		}
+		body = strings.Replace(body, from, to, 1)
+	}
+	install := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh")
+	cmd.Stdin = strings.NewReader(body)
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "TELARA_INSTALL_DIR=") && !strings.HasPrefix(e, "TELARA_VERSION=") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	cmd.Env = append(cmd.Env, "TELARA_INSTALL_DIR="+install)
+	out, runErr := cmd.CombinedOutput()
+	if runErr == nil {
+		t.Fatalf("installer succeeded on a checksum mismatch\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(install, "telara")); !os.IsNotExist(err) {
+		t.Fatalf("a mismatched archive was installed: %v", err)
+	}
 }

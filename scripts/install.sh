@@ -82,6 +82,31 @@ if ! curl -fsSL "$PRIMARY_URL" -o "$TMP/$FILENAME" 2>/dev/null || ! gzip -t "$TM
   curl -fsSL "$FALLBACK_URL" -o "$TMP/$FILENAME"
 fi
 
+# Verify the archive against the checksum file published with the release.
+# Nothing is extracted or installed unless the SHA-256 matches.
+CHECKSUMS_URL="${GITHUB_DOWNLOAD_URL}/${TAG}/${BINARY}_checksums.txt"
+if ! curl -fsSL "$CHECKSUMS_URL" -o "$TMP/checksums.txt"; then
+  echo "Could not download ${BINARY}_checksums.txt, refusing to install an unverified archive." >&2
+  exit 1
+fi
+WANT="$(awk -v f="$FILENAME" '$2 == f || $2 == "*" f { print $1; exit }' "$TMP/checksums.txt")"
+if [ -z "$WANT" ]; then
+  echo "${BINARY}_checksums.txt has no entry for ${FILENAME}, refusing to install." >&2
+  exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  GOT="$(sha256sum "$TMP/$FILENAME" | awk '{ print $1 }')"
+elif command -v shasum >/dev/null 2>&1; then
+  GOT="$(shasum -a 256 "$TMP/$FILENAME" | awk '{ print $1 }')"
+else
+  echo "Neither sha256sum nor shasum is available, refusing to install an unverified archive." >&2
+  exit 1
+fi
+if [ "$GOT" != "$WANT" ]; then
+  echo "Checksum mismatch for ${FILENAME} (got ${GOT}, release lists ${WANT}), refusing to install." >&2
+  exit 1
+fi
+
 tar -xzf "$TMP/$FILENAME" -C "$TMP"
 
 # Install
