@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/agent"
@@ -33,9 +36,17 @@ var logoutCmd = &cobra.Command{
 			tenantID = whoami.TenantID
 		}
 
+		// Revoke the cached MCP key while the token can still authorise it. A
+		// key that is deleted locally but never revoked stays usable.
+		if err := revokeCachedMCPKey(context.Background(), client); err != nil {
+			return err
+		}
+
 		if err := client.RevokeToken(context.Background()); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to revoke token server-side: %v\n", err)
-			// Still delete locally
+			if !tokenRejected(err) {
+				// Keep the local credential so the revoke can be retried.
+				return fmt.Errorf("the token is still valid on the server, the revoke failed and nothing was removed locally. Run telara logout again once the server is reachable. %w", err)
+			}
 		}
 
 		// Snapshot + clean up MCP configs before deleting the token.
@@ -48,6 +59,50 @@ var logoutCmd = &cobra.Command{
 		display.PrintSuccess("Logged out")
 		return nil
 	},
+}
+
+// tokenRejected reports that the server refused the CLI token itself, which
+// means it is not live and there is nothing left to revoke.
+func tokenRejected(err error) bool {
+	var apiErr *api.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized
+}
+
+// revokeCachedMCPKey revokes the MCP key `telara install` cached beside the
+// login token. The cache holds only the raw key, so the key is found by the
+// prefix the server lists for each configuration the user can reach.
+func revokeCachedMCPKey(ctx context.Context, client *api.Client) error {
+	raw, err := auth.LoadMCPKey(prefs.APIURL)
+	if errors.Is(err, auth.ErrNoMCPKey) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the cached MCP key: %w", err)
+	}
+	configs, err := client.ListConfigs(ctx)
+	if err != nil {
+		if tokenRejected(err) {
+			return nil
+		}
+		return fmt.Errorf("the cached MCP key is still valid on the server, listing configurations to revoke it failed and nothing was removed locally. %w", err)
+	}
+	for _, cfg := range configs.Configs {
+		keys, err := client.ListKeys(ctx, cfg.ID)
+		if err != nil {
+			return fmt.Errorf("the cached MCP key may still be valid on the server, listing keys for %s failed and nothing was removed locally. %w", cfg.Name, err)
+		}
+		for _, k := range keys.Keys {
+			if k.Revoked || len(k.Prefix) < 8 || !strings.HasPrefix(raw, k.Prefix) {
+				continue
+			}
+			if err := client.RevokeKey(ctx, k.ID, cfg.ID); err != nil {
+				return fmt.Errorf("the cached MCP key %s is still valid on the server, the revoke failed and nothing was removed locally. %w", k.Prefix, err)
+			}
+			return nil
+		}
+	}
+	fmt.Fprintln(os.Stderr, "Warning: the cached MCP key matches no key on your configurations, so there was nothing to revoke. It is removed locally.")
+	return nil
 }
 
 // scopeString converts an agent.Scope to a string for snapshot storage.
