@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
@@ -52,7 +55,21 @@ func PollForToken(ctx context.Context, client *api.Client, deviceCode string, in
 		var resp api.PollDeviceResponse
 		req := api.PollDeviceRequest{DeviceCode: deviceCode}
 		if err := client.Post(ctx, "/v1/cli/auth/device/token", req, &resp); err != nil {
-			return "", fmt.Errorf("failed to poll for token: %w", err)
+			// The Gateway reports expired and denied as HTTP 400 with {status}.
+			if terminal := terminalDeviceStatus(err); terminal != nil {
+				return "", terminal
+			}
+			if !transientPollError(err) {
+				return "", fmt.Errorf("failed to poll for token: %w", err)
+			}
+			// A 429, a 5xx or a dropped connection during the wait is not the
+			// end of the login. The caller's context bounds the retrying.
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("failed to poll for token: %w", err)
+			case <-time.After(pollInterval):
+			}
+			continue
 		}
 
 		switch resp.Status {
@@ -68,11 +85,48 @@ func PollForToken(ctx context.Context, client *api.Client, deviceCode string, in
 			case <-time.After(pollInterval):
 			}
 		case "expired":
-			return "", fmt.Errorf("device code expired — run 'telara login' again")
+			return "", errDeviceExpired
 		case "denied":
-			return "", fmt.Errorf("authorization was denied")
+			return "", errDeviceDenied
 		default:
 			return "", fmt.Errorf("unexpected device flow status: %q", resp.Status)
 		}
 	}
+}
+
+var (
+	errDeviceExpired = fmt.Errorf("device code expired — run 'telara login' again")
+	errDeviceDenied  = fmt.Errorf("authorization was denied")
+)
+
+// terminalDeviceStatus maps an HTTP 400 carrying {"status":"expired"|"denied"}
+// to the CLI's own error, or returns nil.
+func terminalDeviceStatus(err error) error {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		return nil
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal([]byte(apiErr.Body), &body) != nil {
+		return nil
+	}
+	switch body.Status {
+	case "expired":
+		return errDeviceExpired
+	case "denied":
+		return errDeviceDenied
+	}
+	return nil
+}
+
+// transientPollError reports a failure worth retrying: rate limiting, a server
+// or gateway error, or a transport error. Any other API refusal is final.
+func transientPollError(err error) bool {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+	}
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
