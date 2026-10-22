@@ -386,3 +386,34 @@ func TestBuildReport_SkillReportIsDeterministic(t *testing.T) {
 		t.Fatal("re-scanning unchanged skills must produce a byte-identical report")
 	}
 }
+
+// A SKILL.md that opens with --- and never closes it is a horizontal rule
+// followed by a body. Body lines that look like keys must not be reported
+// (FUP-4-G10).
+func TestScanSkills_UnterminatedFrontmatterEmitsNoDescription(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(t.TempDir())
+
+	const bodyText = "INTERNAL-ONLY-vault.corp.internal"
+	writeSkill(t, skillsRoot(home), "unterminated", "---\nname: from-the-body\ndescription: "+bodyText+"\nmore body text\n", nil)
+
+	found := false
+	for _, r := range ScanSkills() {
+		if r.ClientFamily != ClientClaudeCode || r.Scope != ScopeGlobalSkills {
+			continue
+		}
+		for _, sk := range r.Skills {
+			found = true
+			if sk.Description != "" {
+				t.Fatalf("description %q was read from an unterminated frontmatter", sk.Description)
+			}
+			if sk.SkillName != "unterminated" {
+				t.Fatalf("name %q came from the body, want the directory name", sk.SkillName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the skill was not reported at all")
+	}
+}

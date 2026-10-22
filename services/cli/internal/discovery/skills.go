@@ -337,9 +337,11 @@ func parseSkillFrontmatter(content string) (name, description string) {
 		limit = maxSkillFrontmatterLines
 	}
 
+	closed := false
 	for i := 1; i < limit; i++ {
 		line := strings.TrimRight(lines[i], "\r")
 		if strings.TrimSpace(line) == "---" {
+			closed = true
 			break
 		}
 		// Column-zero only: indented lines belong to a nested block.
@@ -358,6 +360,12 @@ func parseSkillFrontmatter(content string) (name, description string) {
 		case "description":
 			description = value
 		}
+	}
+	// Frontmatter is honoured only when it is closed. Without a closing ---
+	// the opening one is a horizontal rule and what follows is body text,
+	// which must never be reported.
+	if !closed {
+		return "", ""
 	}
 	return name, description
 }
