@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -282,7 +283,7 @@ func installWritersWithConfig(ctx context.Context, client *api.Client, writers [
 	if err != nil {
 		return nil, err
 	}
-	keyName := toolKeyName(writers[0].Name())
+	keyName := installKeyName(writers)
 	key, err := client.GenerateKey(ctx, cfg.ID, api.GenerateKeyRequest{
 		Name:      keyName,
 		ScopeType: dep.ScopeType,
@@ -319,11 +320,26 @@ func installWritersWithConfig(ctx context.Context, client *api.Client, writers [
 		}
 		results = append(results, notify(onResult, i, installResult{client: writer.Name(), status: "CONNECTED", detail: cfg.Name}))
 	}
-	revokeSupersededKeys(client, cfg.ID, keyName, key.KeyID)
 	if failed {
+		// A client that was not rewritten still carries the previous key, so
+		// retiring it here would break that client with no message.
 		return results, fmt.Errorf("one or more clients could not be configured")
 	}
+	revokeSupersededKeys(client, cfg.ID, keyName, key.KeyID)
 	return results, nil
+}
+
+// installKeyName names the key after the whole client set it is written into.
+// The key is shared by every selected client, so a later install of a different
+// set must not match, and therefore must not revoke, a key the clients outside
+// its set still carry. A single client keeps the plain per-tool name.
+func installKeyName(writers []agent.AgentWriter) string {
+	names := make([]string, 0, len(writers))
+	for _, w := range writers {
+		names = append(names, w.Name())
+	}
+	sort.Strings(names)
+	return toolKeyName(strings.Join(names, "+"))
 }
 
 // notify tells each callback about one client's result and returns it.
