@@ -144,7 +144,7 @@ Generate credentials for environments where the CLI isn't available.
 | Claude Code | ✓ | ✓ | ✓ |
 | Cursor | ✓ | ✓ | ✓ |
 | Windsurf | ✓ | ✓ | ✓ |
-| VS Code | ✓ | — | ✓ |
+| VS Code | ✓ | ✓ (user profile) | ✓ |
 
 ---
 

@@ -10,7 +10,7 @@ import (
 const vscodeServersKey = "servers"
 
 // vscodeWriter implements AgentWriter for VS Code.
-// VS Code only supports project-scope MCP configuration.
+// VS Code reads MCP servers from the user profile or a project; there is no managed layer.
 type vscodeWriter struct {
 	homeDir string
 }
@@ -35,13 +35,16 @@ func (w *vscodeWriter) configPath(scope Scope) (string, error) {
 			return "", fmt.Errorf("cannot determine working directory: %w", err)
 		}
 		return filepath.Join(cwd, ".vscode", "mcp.json"), nil
-	default:
-		// VS Code only supports project-scope MCP config; fall back to project.
-		cwd, err := os.Getwd()
+	case ScopeGlobal:
+		// The user profile's mcp.json. It must never be the working directory,
+		// where the bearer key would sit in a repository's tree.
+		dir, err := os.UserConfigDir()
 		if err != nil {
-			return "", fmt.Errorf("cannot determine working directory: %w", err)
+			return "", fmt.Errorf("cannot determine the VS Code user configuration directory: %w", err)
 		}
-		return filepath.Join(cwd, ".vscode", "mcp.json"), nil
+		return filepath.Join(dir, "Code", "User", "mcp.json"), nil
+	default:
+		return "", fmt.Errorf("vscode does not support scope %d", scope)
 	}
 }
 

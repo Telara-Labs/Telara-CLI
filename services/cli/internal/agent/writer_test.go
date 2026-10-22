@@ -1101,3 +1101,40 @@ func TestAmazonQ_NoPermissionWriter(t *testing.T) {
 		t.Fatal("amazon-q writer should NOT implement PermissionWriter")
 	}
 }
+
+// TestVSCode_GlobalScopeNeverWritesIntoTheWorkingDirectory: the bearer key
+// installed at global or managed scope must never land in the repository the
+// command happens to run from, where it could be committed (FUP-4-G04).
+func TestVSCode_GlobalScopeNeverWritesIntoTheWorkingDirectory(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("XDG_CONFIG_HOME", "")
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(prev) }()
+	repoReal, _ := filepath.EvalSymlinks(repo)
+
+	w := NewVSCodeWriter()
+	for name, scope := range map[string]Scope{"global": ScopeGlobal, "managed": ScopeManaged} {
+		path, perr := w.ConfigPath(scope)
+		if perr == nil && (strings.HasPrefix(path, repo) || strings.HasPrefix(path, repoReal)) {
+			t.Fatalf("%s scope resolved to %s, inside the working directory", name, path)
+		}
+		if werr := w.Write(scope, "telara", sampleEntry()); werr == nil && perr != nil {
+			t.Fatalf("%s scope refused its path but Write succeeded", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".vscode", "mcp.json")); err == nil {
+		t.Fatal("a VS Code config was written into the working directory")
+	}
+	if _, err := w.ConfigPath(ScopeManaged); err == nil {
+		t.Fatal("managed scope must be unsupported for VS Code")
+	}
+}
