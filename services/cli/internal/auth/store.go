@@ -31,8 +31,17 @@ type credentialFile struct {
 	MCPKey string `json:"mcp_key,omitempty"`
 }
 
-// sanitizeHost converts an API URL to a safe filename component.
+// sanitizeHost converts an API URL to a safe filename component that names its
+// whole origin. A token saved for https://api.telara.dev is never loaded for
+// http://api.telara.dev or another port, since the bearer would then travel over
+// a different, possibly plaintext, endpoint.
+//
+// The default https origin keeps the bare hostname, so credentials saved by
+// earlier versions still load.
 // e.g. "https://api.telara.dev" -> "api.telara.dev"
+//
+//	"http://api.telara.dev"        -> "http_api.telara.dev"
+//	"https://api.telara.dev:8443"  -> "https_api.telara.dev_8443"
 func sanitizeHost(apiURL string) (string, error) {
 	u, err := url.Parse(apiURL)
 	if err != nil {
@@ -42,9 +51,23 @@ func sanitizeHost(apiURL string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("cannot determine hostname from API URL %q", apiURL)
 	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+	port := u.Port()
+	if port == "" || (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	name := host
+	if scheme != "https" || port != "" {
+		name = scheme + "_" + host
+		if port != "" {
+			name += "_" + port
+		}
+	}
 	// Replace any characters that are unsafe in filenames
-	safe := strings.NewReplacer(":", "_", "/", "_").Replace(host)
-	return safe, nil
+	return strings.NewReplacer(":", "_", "/", "_").Replace(name), nil
 }
 
 // SaveToken stores token for the given apiURL in the credentials file.
@@ -114,7 +137,41 @@ func updateCredentialFile(host string, mutate func(*credentialFile)) error {
 		return fmt.Errorf("marshal credential: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	return writeFileOwnerOnly(path, data)
+}
+
+// writeFileOwnerOnly replaces path with data through a temp file and a rename.
+// os.WriteFile applies its mode only when it creates the file, so an existing
+// group or world readable credential file would keep its mode, and it truncates
+// in place, so an interrupted write would leave partial JSON. The temp file is
+// created 0600 and renamed over the target, which leaves either the old or the
+// new complete file and always an owner-only mode.
+func writeFileOwnerOnly(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cred-*")
+	if err != nil {
+		return fmt.Errorf("write credential file: %w", err)
+	}
+	tmpName := tmp.Name()
+	fail := func(err error) error {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write credential file: %w", err)
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		return fail(err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("write credential file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
 		return fmt.Errorf("write credential file: %w", err)
 	}
 	return nil
