@@ -58,7 +58,7 @@ func PlatformToolNames() []string {
 		"telara_task_complete",
 		"telara_task_pause",
 		// Action execution and on-demand discovery
-		"telara_execute_action",
+		"telara_execute_action", "telara_execute_read",
 		"telara_tool_search",
 		"telara_tool_describe",
 		// Shared skills (TENG-2719)

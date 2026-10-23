@@ -23,7 +23,7 @@ func TestPlatformToolNamesMatchesGatewaySurface(t *testing.T) {
 		"telara_archive_read", "telara_archive_ls", "telara_archive_search",
 		"telara_task_list", "telara_task_create", "telara_task_resume",
 		"telara_task_checkpoint", "telara_task_complete", "telara_task_pause",
-		"telara_execute_action", "telara_tool_search", "telara_tool_describe",
+		"telara_execute_action", "telara_execute_read", "telara_tool_search", "telara_tool_describe",
 		// Shared skills (TENG-2719). Present here for the same reason as the
 		// rest: Cursor, Windsurf and Codex auto-approve by explicit NAME, so a
 		// tool missing from this fallback re-prompts the user on every call
@@ -50,7 +50,7 @@ func TestPlatformToolNamesMatchesGatewaySurface(t *testing.T) {
 	// The count is asserted rather than just the membership above so that a
 	// tool added to the gateway without being added here is caught: that is
 	// the drift TestPlatformToolNamesMatchesGatewaySurface exists to prevent.
-	if len(names) != 24 {
-		t.Errorf("expected the 24-tool core, got %d: %v", len(names), PlatformToolNames())
+	if len(names) != 25 {
+		t.Errorf("expected the 25-tool core, got %d: %v", len(names), PlatformToolNames())
 	}
 }
