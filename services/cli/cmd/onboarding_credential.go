@@ -52,7 +52,10 @@ func credentialFallbackPermitted(err error) bool {
 // scopeBaseName), so matching the string "Personal" matches nothing and matching
 // the uuid inside the name resolves to a different object entirely.
 type onboardingBinding struct {
-	RawKey     string
+	RawKey string
+	// KeyID is the server id of RawKey, cached with it so logout revokes this
+	// exact key. Empty when the issuing route did not return one.
+	KeyID      string
 	MCPURL     string
 	ConfigID   string
 	ConfigName string
@@ -90,6 +93,7 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 	if baseErr == nil {
 		return onboardingBinding{
 			RawKey:           base.BaseKey,
+			KeyID:            base.KeyID,
 			MCPURL:           base.MCPURL,
 			ConfigID:         base.MCPConfigID,
 			ConfigName:       base.ConfigName,
@@ -109,7 +113,7 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 				"         now bound to the tenant MASTER configuration — the union of every\n"+
 				"         policy in the tenant, not your personal least-privilege base.\n"+
 				"         Base key error: %v\n\n", baseErr)
-		return onboardingBinding{RawKey: master.MasterKey, MCPURL: master.MCPURL, ConfigName: "Master"}, nil
+		return onboardingBinding{RawKey: master.MasterKey, KeyID: master.KeyID, MCPURL: master.MCPURL, ConfigName: "Master"}, nil
 	}
 	if !credentialFallbackPermitted(masterErr) {
 		return onboardingBinding{}, fmt.Errorf("issue tenant master key (base key unavailable: %v): %w", baseErr, masterErr)
@@ -164,7 +168,7 @@ func onboardingCredential(ctx context.Context, client *api.Client, keyName strin
 				"         %q rather than your personal least-privilege base.\n"+
 				"         Base key error:   %v\n"+
 				"         Master key error: %v\n\n", cfg.Name, baseErr, masterErr)
-		return onboardingBinding{RawKey: key.RawKey, MCPURL: key.MCPURL, ConfigID: cfg.ID, ConfigName: cfg.Name}, nil
+		return onboardingBinding{RawKey: key.RawKey, KeyID: key.KeyID, MCPURL: key.MCPURL, ConfigID: cfg.ID, ConfigName: cfg.Name}, nil
 	}
 	return onboardingBinding{}, fmt.Errorf("issue tenant master key (%v); no usable fallback configuration: %w", masterErr, lastErr)
 }

@@ -54,7 +54,7 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
+		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","key_id":"key-77","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
 	}))
 	defer server.Close()
 	// Install caches the key for `telara mcp stdio` in the credential store;
@@ -73,6 +73,9 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 	}
 	if key, err := auth.LoadMCPKey(server.URL); err != nil || key != "telara_mcp_base_key" {
 		t.Fatalf("the key was not cached for telara mcp stdio: %q, %v", key, err)
+	}
+	if id, err := auth.LoadMCPKeyID(server.URL); err != nil || id != "key-77" {
+		t.Fatalf("the key id was not cached for logout: %q, %v", id, err)
 	}
 }
 
@@ -202,7 +205,7 @@ func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/ready/deployments":
 			_, _ = w.Write([]byte(`{"deployments":[{"id":"dep","scope_type":"tenant","scope_id":"tenant"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/ready/keys":
-			_, _ = w.Write([]byte(`{"raw_key":"telara_mcp_fallback","mcp_url":"https://api.telara.dev/v1/mcp"}`))
+			_, _ = w.Write([]byte(`{"id":"key-fb","raw_key":"telara_mcp_fallback","mcp_url":"https://api.telara.dev/v1/mcp"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -218,5 +221,8 @@ func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T)
 	}
 	if binding.IsDefaultBinding {
 		t.Fatal("a deployed-config fallback must not be reported as the user's base")
+	}
+	if binding.KeyID != "key-fb" {
+		t.Fatalf("fallback key id = %q, want key-fb", binding.KeyID)
 	}
 }

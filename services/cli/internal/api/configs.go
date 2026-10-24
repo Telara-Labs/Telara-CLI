@@ -72,7 +72,9 @@ type ResolveResponse struct {
 // when a local client needs a fresh, user-bound credential.
 type MasterKeyResponse struct {
 	MasterKey string `json:"master_key"`
-	MCPURL    string `json:"mcp_url"`
+	// KeyID is the server id of the issued key, which logout revokes by.
+	KeyID  string `json:"key_id,omitempty"`
+	MCPURL string `json:"mcp_url"`
 }
 
 // ListConfigs fetches all MCP configurations accessible to the authenticated user.
@@ -121,7 +123,9 @@ func (c *Client) IssueMasterKey(ctx context.Context, name string) (*MasterKeyRes
 
 // BaseKeyResponse is returned once by POST /v1/cli/configs/base/key.
 type BaseKeyResponse struct {
-	BaseKey     string `json:"base_key"`
+	BaseKey string `json:"base_key"`
+	// KeyID is the server id of the issued key, which logout revokes by.
+	KeyID       string `json:"key_id,omitempty"`
 	MCPURL      string `json:"mcp_url"`
 	MCPConfigID string `json:"mcp_config_id"`
 	ConfigName  string `json:"config_name"`

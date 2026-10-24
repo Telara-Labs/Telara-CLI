@@ -66,9 +66,27 @@ func Execute() {
 	}
 }
 
+// verbatimError marks an error whose message must reach the user unchanged.
+// printError otherwise replaces any network-level failure with a generic hint,
+// which would hide a statement the user has to act on, such as logout's "the
+// token is still valid on the server".
+type verbatimError struct{ err error }
+
+func (e *verbatimError) Error() string { return e.err.Error() }
+func (e *verbatimError) Unwrap() error { return e.err }
+
+// stillValidError marks err so printError prints it as written.
+func stillValidError(err error) error { return &verbatimError{err: err} }
+
 // printError writes a formatted error to stderr, with extra detail when --verbose
 // is set or when the error is a network-level failure.
 func printError(err error) {
+	var verbatim *verbatimError
+	if errors.As(err, &verbatim) {
+		display.PrintError(verbatim.Error())
+		return
+	}
+
 	// Network-level failures.
 	msg := err.Error()
 	if strings.Contains(msg, "connection refused") ||

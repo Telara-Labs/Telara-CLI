@@ -29,6 +29,10 @@ type credentialFile struct {
 	// ps would show it (TENG-3019). Only the stdio shim needs it: an http client
 	// config carries its own copy.
 	MCPKey string `json:"mcp_key,omitempty"`
+	// MCPKeyID is the server id of MCPKey. Key prefixes are shared by every key
+	// of a tenant, so logout revokes by this id; an entry cached before the id
+	// was stored has none.
+	MCPKeyID string `json:"mcp_key_id,omitempty"`
 }
 
 // sanitizeHost converts an API URL to a safe filename component that names its
@@ -195,15 +199,41 @@ func readCredentialFile(path string) (*credentialFile, error) {
 }
 
 // SaveMCPKey stores the raw MCP API key for the given apiURL, beside the login
-// token for the same host.
+// token for the same host. The key replaces any earlier one, so an id stored
+// for the earlier key is dropped.
 func SaveMCPKey(apiURL, key string) error {
+	return SaveMCPKeyWithID(apiURL, key, "")
+}
+
+// SaveMCPKeyWithID stores the raw MCP API key together with its server id, so
+// logout can revoke exactly this key.
+func SaveMCPKeyWithID(apiURL, key, keyID string) error {
 	host, err := sanitizeHost(apiURL)
 	if err != nil {
 		return err
 	}
 	return updateCredentialFile(host, func(cred *credentialFile) {
 		cred.MCPKey = key
+		cred.MCPKeyID = keyID
 	})
+}
+
+// LoadMCPKeyID returns the server id stored with the MCP key, or "" when the
+// key was cached without one.
+func LoadMCPKeyID(apiURL string) (string, error) {
+	host, err := sanitizeHost(apiURL)
+	if err != nil {
+		return "", err
+	}
+	path, err := credFilePath(host)
+	if err != nil {
+		return "", err
+	}
+	cred, err := readCredentialFile(path)
+	if err != nil {
+		return "", err
+	}
+	return cred.MCPKeyID, nil
 }
 
 // LoadMCPKey retrieves the stored MCP API key for the given apiURL.
@@ -235,6 +265,7 @@ func DeleteMCPKey(apiURL string) error {
 	}
 	return updateCredentialFile(host, func(cred *credentialFile) {
 		cred.MCPKey = ""
+		cred.MCPKeyID = ""
 	})
 }
 

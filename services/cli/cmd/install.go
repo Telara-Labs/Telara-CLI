@@ -232,7 +232,7 @@ func installWritersWithCredential(ctx context.Context, client *api.Client, write
 	// (TENG-3019). Best-effort: failing to cache the key must not fail an install
 	// that otherwise succeeded, since the http entry written below carries its
 	// own copy and works without this one.
-	if err := auth.SaveMCPKey(prefs.APIURL, binding.RawKey); err != nil {
+	if err := auth.SaveMCPKeyWithID(prefs.APIURL, binding.RawKey, binding.KeyID); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not store the MCP key for `telara mcp stdio`: %v\n", err)
 	}
 
