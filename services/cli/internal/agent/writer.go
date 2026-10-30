@@ -65,6 +65,9 @@ func PlatformToolNames() []string {
 		"telara_skill_search",
 		"telara_skill_load",
 		"telara_skill_publish",
+		// Governed handoff (TENG-3693)
+		"telara_handoff_open",
+		"telara_handoff_request",
 	}
 }
 

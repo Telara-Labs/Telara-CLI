@@ -50,7 +50,7 @@ func TestPlatformToolNamesMatchesGatewaySurface(t *testing.T) {
 	// The count is asserted rather than just the membership above so that a
 	// tool added to the gateway without being added here is caught: that is
 	// the drift TestPlatformToolNamesMatchesGatewaySurface exists to prevent.
-	if len(names) != 25 {
-		t.Errorf("expected the 25-tool core, got %d: %v", len(names), PlatformToolNames())
+	if len(names) != 27 {
+		t.Errorf("expected the 27-tool core, got %d: %v", len(names), PlatformToolNames())
 	}
 }
