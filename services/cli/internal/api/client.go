@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,15 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
+	// Prover, when set, signs a DPoP proof for the requests that must prove the
+	// caller's key (a handoff runner's claim, input and report). It is bound to
+	// Token through the proof's ath claim.
+	Prover Prover
+}
+
+// Prover signs one RFC 9449 DPoP proof for a request.
+type Prover interface {
+	Proof(method, url, accessToken string) (string, error)
 }
 
 // NewClient creates a new API client for the given base URL and bearer token.
@@ -84,6 +94,19 @@ func (c *Client) Post(ctx context.Context, path string, body, out interface{}) e
 // do performs an HTTP request, injects the auth header, and decodes the JSON
 // response into out (if non-nil). Returns *APIError for non-2xx responses.
 func (c *Client) do(ctx context.Context, method, path string, body, out interface{}) error {
+	return c.send(ctx, method, path, body, out, false)
+}
+
+// doProved is do with a DPoP proof by the client's own key. A client with no key
+// cannot make the request at all.
+func (c *Client) doProved(ctx context.Context, method, path string, body, out interface{}) error {
+	if c.Prover == nil {
+		return errors.New("this request must prove the runner's key, and the client holds none")
+	}
+	return c.send(ctx, method, path, body, out, true)
+}
+
+func (c *Client) send(ctx context.Context, method, path string, body, out interface{}, prove bool) error {
 	var reqBody *bytes.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -102,6 +125,15 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 	req.Header.Set("Content-Type", "application/json")
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	if prove {
+		// The proof names the URL the Gateway publishes, which is the URL this
+		// request is sent to; the query is not part of it.
+		proof, err := c.Prover.Proof(method, c.BaseURL+path, c.Token)
+		if err != nil {
+			return fmt.Errorf("sign key proof: %w", err)
+		}
+		req.Header.Set("DPoP", proof)
 	}
 
 	resp, err := c.HTTPClient.Do(req)

@@ -91,8 +91,14 @@ func TestCodexIsolatedHomeReportsNotSignedIn(t *testing.T) {
 }
 
 func TestCodexThreadHasOnlyTheGrantSessionAndNothingIsSentBeforeIt(t *testing.T) {
-	mcp := reachable(http.StatusOK)
-	defer mcp.Close()
+	up := newUpstream(http.StatusOK)
+	defer up.Close()
+	key := testKey(t)
+	proxy, err := startSessionProxy(up.URL+"/v1/mcp", "telara_handoff_t.i.s", key, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.close()
 	home := privateHome(t, true)
 	work := t.TempDir()
 	c, err := startCodex(fakeCodexBin, home, work)
@@ -100,9 +106,16 @@ func TestCodexThreadHasOnlyTheGrantSessionAndNothingIsSentBeforeIt(t *testing.T)
 		t.Fatal(err)
 	}
 	defer c.close()
-	if err := c.startThread(work, mcp.URL, "telara_handoff_t.i.s"); err != nil {
+	if err := c.startThread(work, proxy.URL(), proxy.localAuthorization()); err != nil {
 		t.Fatal(err)
 	}
+	// The attachment initialized through the proxy, which presented the session
+	// with a proof by the runner's key. Codex itself never held the credential.
+	seen := up.requests()
+	if len(seen) != 1 || seen[0].auth != "DPoP telara_handoff_t.i.s" {
+		t.Fatalf("upstream saw %+v", seen)
+	}
+	checkProof(t, seen[0].proof, key, "POST", up.URL+"/v1/mcp", "telara_handoff_t.i.s")
 	var start map[string]any
 	for _, r := range records(t, home) {
 		if r["kind"] == "thread_start" {
@@ -116,7 +129,7 @@ func TestCodexThreadHasOnlyTheGrantSessionAndNothingIsSentBeforeIt(t *testing.T)
 		t.Fatal("no thread")
 	}
 	servers, _ := start["servers"].([]any)
-	if len(servers) != 1 || servers[0] != AttachmentName || start["required_"+AttachmentName] != true || start["auth_grant_session_"+AttachmentName] != true {
+	if len(servers) != 1 || servers[0] != AttachmentName || start["required_"+AttachmentName] != true || start["auth_grant_session_"+AttachmentName] != false {
 		t.Fatalf("thread %v", start)
 	}
 	if start["sandbox"] != "workspace-write" || start["approval_policy"] != "never" || start["ephemeral"] != true || start["cwd"] != work {
@@ -133,7 +146,7 @@ func TestCodexRequiredAttachmentThatCannotInitializeFailsTheThread(t *testing.T)
 		t.Fatal(err)
 	}
 	defer c.close()
-	if err := c.startThread(t.TempDir(), mcp.URL, "telara_handoff_t.i.s"); err == nil {
+	if err := c.startThread(t.TempDir(), mcp.URL, "Bearer local"); err == nil {
 		t.Fatal("a thread started without its required grant session")
 	}
 }
@@ -148,7 +161,7 @@ func TestCodexTurnEndsOnInterrupt(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.close()
-	if err := c.startThread(work, mcp.URL, "telara_handoff_t.i.s"); err != nil {
+	if err := c.startThread(work, mcp.URL, "Bearer local"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.startTurn("fake:hang"); err != nil {
@@ -195,11 +208,11 @@ func TestFirstTurnCarriesTheTaskAndNoBodies(t *testing.T) {
 	}
 }
 
-func TestThreadConfigKeepsTheCredentialInTheAttachmentOnly(t *testing.T) {
-	cfg := threadConfig("https://example.invalid/v1/mcp", "telara_handoff_t.i.s")
+func TestThreadConfigKeepsTheAuthorizationInTheAttachmentOnly(t *testing.T) {
+	cfg := threadConfig("http://127.0.0.1:1/v1/mcp", "Bearer local-token")
 	b, _ := json.Marshal(cfg)
-	if strings.Count(string(b), "telara_handoff_t.i.s") != 1 {
-		t.Fatalf("credential placement %s", b)
+	if strings.Count(string(b), "local-token") != 1 {
+		t.Fatalf("authorization placement %s", b)
 	}
 	servers := cfg["mcp_servers"].(map[string]any)
 	if len(servers) != 1 {

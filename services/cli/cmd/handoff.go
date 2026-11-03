@@ -64,7 +64,7 @@ func handoffRunner() (*handoffrunner.Runner, error) {
 
 var handoffRunnerSetupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Create the runner's private directories",
+	Short: "Create the runner's private directories and its own key",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		r, err := handoffRunner()
 		if err != nil {
@@ -73,7 +73,11 @@ var handoffRunnerSetupCmd = &cobra.Command{
 		if err := r.PrepareHome(); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stdout, "Runner directory: %s\nNext, sign in to Codex inside it: telara handoff runner login\n", r.Dir)
+		key, err := r.LoadKey()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "Runner directory: %s\nRunner key: %s (thumbprint %s)\nNext, sign in to Codex inside it: telara handoff runner login\n", r.Dir, r.KeyPath(), key.Thumbprint())
 		return nil
 	},
 }
@@ -115,9 +119,17 @@ var handoffRunnerRunCmd = &cobra.Command{
 		if err := r.PrepareHome(); err != nil {
 			return err
 		}
+		key, err := r.LoadKey()
+		if err != nil {
+			return err
+		}
 		client := api.NewClient(prefs.APIURL, token)
 		client.HTTPClient.Timeout = 60 * time.Second
+		// Claim, input and report prove the runner's key; the run's session is bound
+		// to it, and the runner's MCP proxy proves it on every call.
+		client.Prover = key
 		r.Control = client
+		r.Key = key
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		if handoffRunnerOnce {

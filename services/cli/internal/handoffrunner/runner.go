@@ -10,6 +10,12 @@
 // login, which never leaves their machine. It never decides anything: it cannot
 // accept, decline or change work. It holds the session credential in memory for one
 // run and never past the grant's expiry, and it writes no credential to disk.
+//
+// The runner has its own key pair, made at setup and kept in its directory readable
+// by the person only (TENG-3693 G05). A claim proves the key, the run's session is
+// bound to it, and every call on the session carries a proof by it. Codex reaches
+// the session through a loopback proxy that adds the credential and the proof, so
+// Codex holds neither, and a copy of the credential is refused without the key.
 package handoffrunner
 
 import (
@@ -18,12 +24,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/dpop"
 )
 
 // CodexCatalogKey is the destination this runner starts.
@@ -51,7 +59,11 @@ type Runner struct {
 	// Heartbeat is how often a running run is reported, and so how soon a stop lands.
 	Heartbeat time.Duration
 	Log       io.Writer
-	now       func() time.Time
+	// Key is the runner's own key, from LoadKey. The run's session is bound to it.
+	Key *dpop.Key
+	// MCPTransport carries the proxied MCP calls to Telara; nil uses the CLI's own.
+	MCPTransport http.RoundTripper
+	now          func() time.Time
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -72,9 +84,14 @@ func (r *Runner) CodexHome() string { return filepath.Join(r.Dir, "codex-home") 
 
 func (r *Runner) journalDir() string { return filepath.Join(r.Dir, "journal") }
 
-// PrepareHome creates the runner's directories, private to the person.
+// KeyPath is the runner's own private key. It is outside the Codex home, so it is
+// not part of the agent's configuration, and outside the journal.
+func (r *Runner) KeyPath() string { return filepath.Join(r.Dir, "keys", "runner-dpop-key.pem") }
+
+// PrepareHome creates the runner's directories, private to the person, and the
+// runner's key pair when it has none.
 func (r *Runner) PrepareHome() error {
-	for _, dir := range []string{r.Dir, r.CodexHome(), filepath.Join(r.Dir, "runs"), r.journalDir()} {
+	for _, dir := range []string{r.Dir, r.CodexHome(), filepath.Join(r.Dir, "runs"), r.journalDir(), filepath.Dir(r.KeyPath())} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
@@ -82,7 +99,17 @@ func (r *Runner) PrepareHome() error {
 			return err
 		}
 	}
-	return nil
+	_, err := dpop.LoadOrCreate(r.KeyPath())
+	return err
+}
+
+// LoadKey reads the runner's key. A missing key means setup has not run.
+func (r *Runner) LoadKey() (*dpop.Key, error) {
+	k, err := dpop.Load(r.KeyPath())
+	if errors.Is(err, dpop.ErrNoKey) {
+		return nil, errors.New("the runner has no key yet (run: telara handoff runner setup)")
+	}
+	return k, err
 }
 
 // checkHome refuses a home that could carry ambient configuration into a run: it
@@ -166,6 +193,9 @@ func (r *Runner) Reconcile(ctx context.Context) {
 func (r *Runner) Once(ctx context.Context) error {
 	if err := r.checkHome(); err != nil {
 		return err
+	}
+	if r.Key == nil {
+		return errors.New("the runner holds no key (run: telara handoff runner setup)")
 	}
 	r.Reconcile(ctx)
 	// A run claimed by a runner that cannot sign in would end blocked. Check first,
@@ -271,9 +301,17 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 		report(api.HandoffRunCancelled)
 		return errors.New("Codex is not signed in in the runner's own home (run: telara handoff runner login)")
 	}
+	// Codex reaches the session only through this run's proxy, which proves the
+	// runner's key on every call. It closes when the run ends.
+	proxy, err := startSessionProxy(r.MCPURL, claim.Credential, r.Key, r.MCPTransport, r.logf)
+	if err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	defer proxy.close()
 	// The attachment comes first. Required, so a session that cannot initialize
 	// fails the thread and no input is ever sent.
-	if err := agent.startThread(workdir, r.MCPURL, claim.Credential); err != nil {
+	if err := agent.startThread(workdir, proxy.URL(), proxy.localAuthorization()); err != nil {
 		report(api.HandoffRunCancelled)
 		return err
 	}

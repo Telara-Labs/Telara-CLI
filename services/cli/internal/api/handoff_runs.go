@@ -68,9 +68,11 @@ func (c *Client) ListMyHandoffRuns(ctx context.Context, catalogKeys []string) ([
 }
 
 // ClaimHandoffRun claims a session for one run. A second claim revokes the first.
+// The claim proves the runner's key, and the session is bound to it (TENG-3693
+// G05): every MCP call on it must carry a proof by the same key.
 func (c *Client) ClaimHandoffRun(ctx context.Context, executionID string) (*HandoffRunClaim, error) {
 	var resp HandoffRunClaim
-	if err := c.do(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/claim", map[string]string{}, &resp); err != nil {
+	if err := c.doProved(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/claim", map[string]string{}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -80,7 +82,7 @@ func (c *Client) ClaimHandoffRun(ctx context.Context, executionID string) (*Hand
 func (c *Client) GetHandoffRunInput(ctx context.Context, executionID, incarnationID string, seen HandoffRunAttachment) (*HandoffRunInput, error) {
 	var resp HandoffRunInput
 	body := map[string]any{"incarnation_id": incarnationID, "attachment": seen}
-	if err := c.do(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/input", body, &resp); err != nil {
+	if err := c.doProved(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/input", body, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -93,7 +95,7 @@ func (c *Client) ReportHandoffRun(ctx context.Context, executionID, incarnationI
 		Recorded string `json:"recorded"`
 	}
 	body := map[string]string{"incarnation_id": incarnationID, "status": status}
-	if err := c.do(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/report", body, &resp); err != nil {
+	if err := c.doProved(ctx, "POST", "/v1/cli/handoff-runs/"+url.PathEscape(executionID)+"/report", body, &resp); err != nil {
 		return false, "", err
 	}
 	return resp.Stop, resp.Recorded, nil

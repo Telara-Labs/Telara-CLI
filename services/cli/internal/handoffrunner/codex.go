@@ -199,16 +199,17 @@ func (c *codex) signedIn() (bool, error) {
 
 // threadConfig is the whole configuration of a receiving thread. The grant session
 // is its only MCP server, marked required so the thread fails to start rather than
-// run without it. The sandbox keeps writes to the run's own empty directory with
+// run without it. The server is the run's loopback proxy and authorization is the
+// proxy's per-run token, so Codex never holds the session credential. The sandbox keeps writes to the run's own empty directory with
 // no network, and web search is off, so native tools cannot reach around the grant.
 // Codex's sandbox is its own enforcement: whether it confines every native path for
 // a given account and version is a qualification question, not settled here.
-func threadConfig(mcpURL, credential string) map[string]any {
+func threadConfig(mcpURL, authorization string) map[string]any {
 	return map[string]any{
 		"mcp_servers": map[string]any{
 			AttachmentName: map[string]any{
 				"url":          mcpURL,
-				"http_headers": map[string]string{"Authorization": "Bearer " + credential},
+				"http_headers": map[string]string{"Authorization": authorization},
 				"required":     true,
 			},
 		},
@@ -220,10 +221,10 @@ func threadConfig(mcpURL, credential string) map[string]any {
 
 // startThread opens one ephemeral thread bound to the grant session, with no input,
 // and proves the session is its one and only attachment before anything is sent.
-func (c *codex) startThread(workdir, mcpURL, credential string) error {
+func (c *codex) startThread(workdir, mcpURL, authorization string) error {
 	started, err := c.call("thread/start", map[string]any{
 		"ephemeral": true, "cwd": workdir, "approvalPolicy": "never", "sandbox": "workspace-write",
-		"config": threadConfig(mcpURL, credential),
+		"config": threadConfig(mcpURL, authorization),
 	})
 	if err != nil {
 		return fmt.Errorf("the grant session could not be attached: %w", err)
