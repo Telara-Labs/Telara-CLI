@@ -173,7 +173,7 @@ func init() {
 	handoffRunnerRunCmd.Flags().StringVar(&handoffRunnerMCPURL, "mcp-url", "", "Telara MCP endpoint the grant session attaches to (default from the API URL)")
 	handoffRunnerRunCmd.Flags().BoolVar(&handoffRunnerOnce, "once", false, "serve the waiting runs and exit")
 	handoffRunnerRunCmd.Flags().DurationVar(&handoffRunnerInterval, "interval", 15*time.Second, "how often to look for new runs")
-	handoffRunnerRunCmd.Flags().DurationVar(&handoffRunnerBeat, "heartbeat", 5*time.Second, "how often a running run is reported, and so how soon a stop lands")
+	handoffRunnerRunCmd.Flags().DurationVar(&handoffRunnerBeat, "heartbeat", 5*time.Second, "how often a running run is reported, and so how soon a stop lands (at most 30s, so Telara does not end the run as abandoned)")
 	handoffRunnerCmd.AddCommand(handoffRunnerSetupCmd, handoffRunnerLoginCmd, handoffRunnerCheckCmd, handoffRunnerRunCmd)
 	handoffCmd.AddCommand(handoffRunnerCmd)
 	rootCmd.AddCommand(handoffCmd)

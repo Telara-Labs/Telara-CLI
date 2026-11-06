@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
@@ -305,6 +306,10 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 	// The credential never outlives the grant here, whatever the agent does.
 	runCtx, cancel := context.WithDeadline(ctx, claim.ExpiresAt)
 	defer cancel()
+	// Telara holds a claimed run on a lease that lapses when the runner stops
+	// calling, so setup is heard too until the watch takes over the heartbeat.
+	setupHeard := r.renewDuringSetup(runCtx, cancel, run.ExecutionID, claim.IncarnationID)
+	defer setupHeard()
 	report := func(status string) {
 		// A report must land even after the run's own deadline.
 		rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -403,7 +408,53 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 		return fmt.Errorf("first turn: %w", err)
 	}
 	r.logf("run %s: started Codex %s, thread %s", run.ExecutionID, agent.version, agent.thread)
+	setupHeard()
 	return r.watch(runCtx, run, claim, agent, report)
+}
+
+// leaseRenewal is the longest the runner goes without calling Telara on a claimed
+// run. Telara ends a claimed run it has not heard from for three minutes, as a
+// runner that died, so this stays well inside that whatever --heartbeat says. A
+// var so tests can shorten it.
+var leaseRenewal = 30 * time.Second
+
+// renewDuringSetup reports the run as running every leaseRenewal from the claim
+// until the returned func is called, which waits for it to finish. A report that
+// says stop cancels the run's context, so setup ends and the run is reported
+// cancelled without input.
+func (r *Runner) renewDuringSetup(ctx context.Context, cancel context.CancelFunc, executionID, incarnationID string) func() {
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		ticker := time.NewTicker(leaseRenewal)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				stop, _, err := r.Control.ReportHandoffRun(ctx, executionID, incarnationID, api.HandoffRunRunning)
+				if err != nil {
+					r.logf("run %s: setup heartbeat failed: %v", executionID, err)
+					continue
+				}
+				if stop {
+					r.logf("run %s: Telara asked it to stop during setup", executionID)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
+	}
 }
 
 // watch heartbeats until the turn ends, a report says stop, or the grant ends.
@@ -411,6 +462,9 @@ func (r *Runner) watch(ctx context.Context, run api.HandoffRun, claim *api.Hando
 	every := r.Heartbeat
 	if every <= 0 {
 		every = 5 * time.Second
+	}
+	if every > leaseRenewal {
+		every = leaseRenewal
 	}
 	done := make(chan struct{})
 	var outcome string
