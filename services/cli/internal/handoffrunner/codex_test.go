@@ -219,3 +219,22 @@ func TestThreadConfigKeepsTheAuthorizationInTheAttachmentOnly(t *testing.T) {
 		t.Fatalf("servers %v", servers)
 	}
 }
+
+func TestThreadConfigDisablesCodexApps(t *testing.T) {
+	cfg := threadConfig("http://127.0.0.1:1/v1/mcp", "Bearer x")
+	f, _ := cfg["features"].(map[string]any)
+	if v, ok := f["apps"].(bool); !ok || v {
+		t.Fatalf("features.apps must be false, got %#v", cfg["features"])
+	}
+}
+
+func TestGuardNamesUnexpectedServer(t *testing.T) {
+	st := map[string]any{"data": []any{map[string]any{"name": AttachmentName}, map[string]any{"name": "codex_apps"}}}
+	err := checkOnlyGrantServer(st)
+	if err == nil || !strings.Contains(err.Error(), "codex_apps") {
+		t.Fatalf("want error naming codex_apps, got %v", err)
+	}
+	if err := checkOnlyGrantServer(map[string]any{"data": []any{map[string]any{"name": AttachmentName}}}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -216,7 +216,33 @@ func threadConfig(mcpURL, authorization string) map[string]any {
 		"sandbox_workspace_write": map[string]any{"network_access": false},
 		"tools":                   map[string]any{"web_search": false},
 		"web_search":              "disabled",
+		// Codex adds a built-in MCP server (codex_apps) unless apps are off.
+		"features": map[string]any{"apps": false},
 	}
+}
+
+// checkOnlyGrantServer fails closed unless the grant session is the thread's only
+// MCP server, and names any other server it finds.
+func checkOnlyGrantServer(status map[string]any) error {
+	data, _ := status["data"].([]any)
+	if len(data) != 1 {
+		var others []string
+		for _, d := range data {
+			e, _ := d.(map[string]any)
+			if n, _ := e["name"].(string); n != AttachmentName {
+				others = append(others, fmt.Sprintf("%q", n))
+			}
+		}
+		return fmt.Errorf("the thread has %d MCP servers, want only the grant session (unexpected: %s)", len(data), strings.Join(others, ", "))
+	}
+	if next, _ := status["nextCursor"].(string); next != "" {
+		return errors.New("the thread has more MCP servers than the grant session")
+	}
+	entry, _ := data[0].(map[string]any)
+	if name, _ := entry["name"].(string); name != AttachmentName {
+		return fmt.Errorf("the thread's MCP server is %q, not the grant session", name)
+	}
+	return nil
 }
 
 // startThread opens one ephemeral thread bound to the grant session, with no input,
@@ -242,18 +268,7 @@ func (c *codex) startThread(workdir, mcpURL, authorization string) error {
 	if err != nil {
 		return err
 	}
-	data, _ := status["data"].([]any)
-	if len(data) != 1 {
-		return fmt.Errorf("the thread has %d MCP servers, want only the grant session", len(data))
-	}
-	if next, _ := status["nextCursor"].(string); next != "" {
-		return errors.New("the thread has more MCP servers than the grant session")
-	}
-	entry, _ := data[0].(map[string]any)
-	if name, _ := entry["name"].(string); name != AttachmentName {
-		return fmt.Errorf("the thread's MCP server is %q, not the grant session", name)
-	}
-	return nil
+	return checkOnlyGrantServer(status)
 }
 
 // startTurn sends the first and only input.
