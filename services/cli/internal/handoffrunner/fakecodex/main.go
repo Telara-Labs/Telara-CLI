@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,6 +38,7 @@ type fake struct {
 	out       *bufio.Writer
 	home      string
 	thread    string
+	threads   int
 	servers   map[string]server
 	interrupt chan struct{}
 	ended     bool
@@ -122,7 +124,9 @@ func (f *fake) threadStart(id any, params map[string]any) {
 			}
 		}
 	}
-	f.thread = "fake-thread-1"
+	// Each thread/start is a new thread, as in Codex.
+	f.threads++
+	f.thread = fmt.Sprintf("fake-thread-%d", f.threads)
 	f.send(map[string]any{"id": id, "result": map[string]any{"thread": map[string]any{"id": f.thread}}})
 }
 

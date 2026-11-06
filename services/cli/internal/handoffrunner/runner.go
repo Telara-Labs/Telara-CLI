@@ -315,8 +315,8 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 		report(api.HandoffRunCancelled)
 		return err
 	}
-	seen := api.HandoffRunAttachment{RuntimeVersion: agent.version, ThreadID: agent.thread, AttachmentName: AttachmentName}
-	input, err := r.Control.GetHandoffRunInput(runCtx, run.ExecutionID, claim.IncarnationID, seen)
+	thread := codexThread{agent: agent, workdir: workdir, mcpURL: proxy.URL(), localAuthorizing: proxy.localAuthorization()}
+	input, err := takeFirstInput(runCtx, r.Control, run.ExecutionID, claim.IncarnationID, thread, r.logf)
 	if err != nil {
 		// Nothing was sent to the agent. A lost reply leaves the input with Telara,
 		// which never sends it twice, and this run is reported on, not retried.

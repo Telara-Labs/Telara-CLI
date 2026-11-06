@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `telara handoff runner` now opens one new Codex thread and asks once more when Telara refuses a run's first input because the thread already carries earlier input outside that work's sensitivity envelope. A second refusal ends the run, and nothing is sent to the refused thread.
 - Fixed `telara handoff runner` cancelling every run on Codex accounts that add a built-in `codex_apps` MCP server. The runner now turns Codex apps off for its thread, and still refuses any other MCP server besides the grant session, naming it.
 - Added `telara handoff runner` (`setup`, `login`, `run`). It starts your own Codex, on your machine, for handoffs you accepted for it: one fresh thread per run whose only tool connection is that work's grant, in an empty working directory with no network, signed in to Codex inside the runner's own home. It stops when Telara says stop or the grant ends, and never stores the session credential.
 - The handoff runner now has its own key pair, made by `telara handoff runner setup` and kept in the runner's directory readable by you only. Each claim proves the key and the run's session is bound to it, so a copy of the session credential is refused anywhere else. Codex reaches the session through a per-run local proxy that adds the credential and a key proof to every call, so Codex never holds either.
