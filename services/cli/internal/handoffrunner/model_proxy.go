@@ -3,6 +3,7 @@ package handoffrunner
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,8 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 )
 
 // Codex's model endpoints, by how the runner's home is signed in.
@@ -43,11 +42,23 @@ type modelProxy struct {
 	listener net.Listener
 	server   *http.Server
 	logf     func(string, ...any)
+	// forwardTransport carries checked requests upstream.
+	forwardTransport http.RoundTripper
 
 	mu     sync.Mutex
 	armed  bool
 	grant  []string
 	probes map[string]chan []toolRef
+}
+
+// modelUpstreamTransport reaches the model endpoint, a public service, with the
+// system roots only. TELARA_CA_CERT_PATH and TELARA_INSECURE are settings for
+// Telara's own endpoints and never apply here: a local Telara CA once replaced the
+// system roots for this connection and failed every run (TENG-3693 B12b).
+func modelUpstreamTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	return t
 }
 
 // startModelProxy serves Codex's model endpoint on 127.0.0.1 until close. It
@@ -68,8 +79,9 @@ func startModelProxy(transport http.RoundTripper, logf func(string, ...any)) (*m
 	}
 	p.listener = ln
 	if transport == nil {
-		transport = api.NewTransport()
+		transport = modelUpstreamTransport()
 	}
+	p.forwardTransport = transport
 	forward := &httputil.ReverseProxy{
 		Rewrite:       p.rewrite,
 		Transport:     transport,

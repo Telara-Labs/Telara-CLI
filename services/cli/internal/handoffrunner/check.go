@@ -19,7 +19,8 @@ import (
 // session in place of a real one, and reports what the agent could do (TENG-3693
 // B11): the confinement in force, the tools Codex offers the model, and the
 // outcome of native reads and writes the app-server is asked to make outside the
-// run's directory. It needs no Telara login and sends nothing to a model: the
+// run's directory. The stand-in has one tool, which must be offered to the model
+// directly. It needs no Telara login and sends nothing to a model: the
 // probe turn is answered by the runner's model proxy. It returns an error unless
 // the tool surface is the grant session's alone and every native attempt failed.
 func (r *Runner) Check(w io.Writer) error {
@@ -31,6 +32,12 @@ func (r *Runner) Check(w io.Writer) error {
 		return err
 	}
 	defer grant.close()
+	// One stand-in tool, so the probe also proves the grant session's tools reach
+	// the model directly rather than deferred behind a search tool (B12b).
+	grant.tools = []any{map[string]any{
+		"name": checkGrantTool, "description": "The runner check's stand-in grant tool.",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+	}}
 	models, err := startModelProxy(nil, r.logf)
 	if err != nil {
 		return err
@@ -181,13 +188,19 @@ func commandFailed(res map[string]any) bool {
 	return code != 0 || strings.TrimSpace(out) == ""
 }
 
-// standInGrant is a local MCP server named like the grant session, for the check
-// only. It initializes and lists no tools, so every tool the model is offered is
-// Codex's own and the surface check decides on Codex alone.
+// checkGrantTool is the stand-in grant session's one tool in the runner check.
+const checkGrantTool = "runner_check_noop"
+
+// standInGrant is a local MCP server named like the grant session. It lists the
+// tools it is given (none by default), so every other tool the model is offered
+// is Codex's own and the surface check decides on Codex alone. It records the
+// name of each tools/call when calls is set.
 type standInGrant struct {
 	listener net.Listener
 	server   *http.Server
 	token    string
+	tools    []any       // tools/list; nil lists none
+	calls    chan string // the name of each tools/call, when set
 }
 
 func startStandInGrant() (*standInGrant, error) {
@@ -240,7 +253,26 @@ func (g *standInGrant) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		result = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "telara-runner-check", "version": "1"}}
 	case "tools/list":
-		result = map[string]any{"tools": []any{}}
+		tools := g.tools
+		if tools == nil {
+			tools = []any{}
+		}
+		result = map[string]any{"tools": tools}
+	case "tools/call":
+		if g.tools == nil {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32601, "message": "not served by the check"}})
+			return
+		}
+		params, _ := req["params"].(map[string]any)
+		name, _ := params["name"].(string)
+		if g.calls != nil {
+			select {
+			case g.calls <- name:
+			default:
+			}
+		}
+		result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "recorded"}}}
 	case "resources/list":
 		result = map[string]any{"resources": []any{}}
 	case "resources/templates/list":

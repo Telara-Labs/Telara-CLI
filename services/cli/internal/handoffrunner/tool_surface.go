@@ -133,4 +133,24 @@ func checkToolSurface(visible []toolRef, grantTools []string) error {
 	return nil
 }
 
+// checkGrantToolsOffered fails closed when the grant session has tools and the
+// model is offered none of them directly. A run whose tools are deferred behind
+// a search tool, or dropped, reaches nothing through the session and would end
+// "completed" with a text answer and no receipt (TENG-3693 B12b).
+func checkGrantToolsOffered(visible []toolRef, grantTools []string) error {
+	if len(grantTools) == 0 {
+		return nil
+	}
+	grant := map[string]bool{}
+	for _, n := range grantTools {
+		grant[n] = true
+	}
+	for _, t := range visible {
+		if grantTool(t, grant) {
+			return nil
+		}
+	}
+	return fmt.Errorf("the thread offers the model none of the grant session's %d tools", len(grantTools))
+}
+
 var errNoToolSurface = errors.New("codex sent no model request to the runner's model proxy, so its tools could not be checked")

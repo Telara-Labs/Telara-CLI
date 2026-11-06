@@ -55,7 +55,7 @@ func TestRealCodexCheckIsContained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Result: contained", "read /etc/passwd", "Control, write and read inside the run's directory: allowed"} {
+	for _, want := range []string{"Result: contained", "read /etc/passwd", "Control, write and read inside the run's directory: allowed", checkGrantTool} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("check output lacks %q", want)
 		}
