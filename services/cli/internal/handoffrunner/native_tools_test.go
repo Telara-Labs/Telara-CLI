@@ -53,10 +53,15 @@ func TestThreadConfigTurnsNativeToolsOffAndHasOnlyTheGrant(t *testing.T) {
 	if len(cfg["mcp_servers"].(map[string]any)) != 1 {
 		t.Fatalf("servers %v", cfg["mcp_servers"])
 	}
+	// Codex's own approval prompt cannot be answered under approval never; the
+	// grant session decides each call instead (B12b).
+	if mode := cfg["mcp_servers"].(map[string]any)[AttachmentName].(map[string]any)["default_tools_approval_mode"]; mode != "approve" {
+		t.Fatalf("grant session approval mode %v", mode)
+	}
 }
 
 func TestToolFreeCatalogClearsModelOwnedTools(t *testing.T) {
-	raw := []byte(`{"models":[{"slug":"a","apply_patch_tool_type":"freeform","tool_mode":"code","multi_agent_version":"v2","experimental_supported_tools":["x"],"keep":1}]}`)
+	raw := []byte(`{"models":[{"slug":"a","apply_patch_tool_type":"freeform","tool_mode":"code","multi_agent_version":"v2","experimental_supported_tools":["x"],"supports_search_tool":true,"keep":1}]}`)
 	out, err := neutralizeCatalog(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +71,7 @@ func TestToolFreeCatalogClearsModelOwnedTools(t *testing.T) {
 	}
 	_ = json.Unmarshal(out, &got)
 	m := got.Models[0]
-	if m["apply_patch_tool_type"] != nil || m["tool_mode"] != nil || m["multi_agent_version"] != nil || len(m["experimental_supported_tools"].([]any)) != 0 || m["keep"] != float64(1) {
+	if m["apply_patch_tool_type"] != nil || m["tool_mode"] != nil || m["multi_agent_version"] != nil || len(m["experimental_supported_tools"].([]any)) != 0 || m["supports_search_tool"] != false || m["keep"] != float64(1) {
 		t.Fatalf("catalog entry %v", m)
 	}
 	for _, bad := range []string{`{}`, `{"models":[]}`, `{"models":[1]}`, `not json`} {
@@ -132,6 +137,26 @@ func TestToolSurfaceAllowsOnlyTheGrantAndMCPHelpers(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), bad.String()) {
 			t.Fatalf("%s: %v", bad, err)
 		}
+	}
+}
+
+// A grant session's tools deferred behind tool_search, or dropped, leave the run
+// nothing to act with; the probe refuses it rather than let it end "completed"
+// with no receipt (B12b).
+func TestProbeRequiresTheGrantSessionsToolsOffered(t *testing.T) {
+	grant := []string{"task_checkpoint"}
+	deferred := []toolRef{{namespace: "functions", name: "list_mcp_resources"}, {name: "tool_search"}}
+	if err := checkToolSurface(deferred, grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkGrantToolsOffered(deferred, grant); err == nil || !strings.Contains(err.Error(), "none of the grant session's 1 tools") {
+		t.Fatalf("deferred grant tools passed: %v", err)
+	}
+	if err := checkGrantToolsOffered(append(deferred, toolRef{namespace: "mcp__telara_handoff", name: "task_checkpoint"}), grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkGrantToolsOffered(deferred, nil); err != nil {
+		t.Fatalf("a grant with no tools: %v", err)
 	}
 }
 

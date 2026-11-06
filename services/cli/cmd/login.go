@@ -33,7 +33,7 @@ var loginCmd = &cobra.Command{
 				client := api.NewClient(prefs.APIURL, existingToken)
 				whoami, err := client.ValidateToken(context.Background())
 				if err == nil {
-					ensureMCPConfig(client, whoami.TenantID)
+					bootstrapAfterLogin(client, whoami.UserID, whoami.TenantID)
 					fmt.Fprintf(os.Stdout, "Already authenticated as %s (%s). Run 'telara logout' first to switch accounts.\n", whoami.Email, whoami.OrgName)
 					return nil
 				}
@@ -121,8 +121,8 @@ func runDeviceFlowLogin() error {
 	return finishLogin(token, whoami, board != nil)
 }
 
-// finishLogin saves the token, prints the welcome banner, auto-restores any snapshot,
-// and auto-wires detected tools if no snapshot existed. boardShown says the
+// finishLogin saves the token, prints the welcome banner, and auto-wires detected
+// tools only if no saved snapshot needs review. boardShown says the
 // animated board already drew the logo.
 func finishLogin(token string, whoami *api.WhoamiResponse, boardShown bool) error {
 	if err := auth.SaveToken(prefs.APIURL, token); err != nil {
@@ -134,15 +134,27 @@ func finishLogin(token string, whoami *api.WhoamiResponse, boardShown bool) erro
 	}
 	printLoginBanner(whoami.Email, whoami.OrgName, boardShown)
 
-	restoreSnapshotAfterLogin(whoami.UserID, whoami.TenantID)
-
-	// Always verify global MCP config is correct — even after snapshot restore,
-	// which may be partial (e.g. missing global claude-code entry).
 	client := api.NewClient(prefs.APIURL, token)
-	ensureMCPConfig(client, whoami.TenantID)
+	bootstrapAfterLogin(client, whoami.UserID, whoami.TenantID)
 
 	ensureScanSchedule(token)
 	return nil
+}
+
+func bootstrapAfterLogin(client *api.Client, userID, tenantID string) {
+	restoreSnapshotAfterLogin(userID, tenantID)
+	// An unresolved snapshot may represent a different selected configuration.
+	// Preserve it and do not silently replace that choice with a new default.
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(tenantID) == "" {
+		fmt.Fprintln(os.Stderr, "Warning: account or workspace identity is missing; client setup was skipped.")
+		return
+	}
+	remainingSnapshot, snapshotErr := agent.LoadWorkspaceSnapshot(userID, tenantID)
+	if snapshotErr != nil || remainingSnapshot != nil {
+		fmt.Fprintln(os.Stderr, "Warning: saved client settings need review; run `telara install` to reconnect the intended configuration.")
+	} else {
+		ensureMCPConfig(client, tenantID)
+	}
 }
 
 // ensureScanSchedule installs the recurring, unattended discovery scan.
@@ -219,12 +231,9 @@ func printLoginBanner(email, orgName string, boardShown bool) {
 	fmt.Fprintln(os.Stdout)
 }
 
-// autoWireTools detects installed AI tools and writes the tenant-scoped default
-// MCP config to each one. Called on first login when no snapshot exists.
-//
-// It explicitly requests a user-bound tenant master key first; the read-only
-// config resolver never mints or returns credentials. A deployed assigned
-// configuration remains a compatibility fallback for older tenants.
+// autoWireTools detects installed AI tools and writes the server-selected
+// personal configuration to each one during a fresh bootstrap. It does not
+// fall back to a tenant master key when personal activation fails.
 //
 // If the tools are already wired with a key that belongs to the current tenant
 // and force is false, the call is a no-op — we never mint a new key just
@@ -324,47 +333,48 @@ func recordWiredGlobal(binding onboardingBinding) {
 		return
 	}
 	if binding.IsDefaultBinding {
-		_ = agent.SaveWiredGlobalDefault(binding.ConfigID, binding.ConfigName)
+		if err := agent.SaveWiredGlobalDefault(binding.ConfigID, binding.ConfigName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: client settings changed but the selected configuration could not be saved: %v\n", err)
+		}
 		return
 	}
-	_ = agent.SaveWiredGlobal(binding.ConfigID, binding.ConfigName)
+	if err := agent.SaveWiredGlobal(binding.ConfigID, binding.ConfigName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: client settings changed but the selected configuration could not be saved: %v\n", err)
+	}
 }
 
-// ensureMCPConfig verifies that the MCP config in detected tools belongs to the
-// current tenant. If any tool is missing a config or has a stale key from a
-// different tenant, it forces regeneration. Called from the re-auth guard so
-// that "already authenticated" logins still repair broken MCP state.
+// ensureMCPConfig bootstraps clients only when no existing Telara configuration
+// is present. Existing credentials require authoritative validation before repair.
 func ensureMCPConfig(client *api.Client, tenantID string) {
+	// Without an authoritative subject/config/revocation check, an existing
+	// key is unknown, even if its text contains this tenant. Never replace it
+	// or a selected configuration automatically while that proof is missing.
+	state, err := agent.LoadWiredState()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not read the selected configuration; client settings were left unchanged: %v\n", err)
+		return
+	}
 	writers := agent.DetectedWriters()
+	if len(writers) == 0 {
+		return
+	}
+	if state != nil && state.Global != nil && strings.TrimSpace(state.Global.ConfigID) != "" {
+		fmt.Fprintln(os.Stderr, "Warning: existing client credentials were not verified; run `telara install` to reconnect the selected configuration if needed.")
+		return
+	}
 	for _, w := range writers {
 		entries, err := w.Read(agent.ScopeGlobal)
 		if err != nil {
-			autoWireTools(client, tenantID, true)
+			fmt.Fprintf(os.Stderr, "Warning: could not read %s settings; client settings were left unchanged: %v\n", w.Name(), err)
 			return
 		}
-		if entries["telara"].URL == "" {
-			autoWireTools(client, tenantID, true)
+		if _, ok := entries["telara"]; ok {
+			fmt.Fprintln(os.Stderr, "Warning: existing client credentials were not verified; client settings were left unchanged.")
 			return
-		}
-		if !keyBelongsToTenant(entries["telara"], tenantID) {
-			autoWireTools(client, tenantID, true)
-			return
-		}
-		if !mcpEntryMatchesWriterEndpoint(w, entries["telara"]) {
-			entry := entries["telara"]
-			entry = normalizeMCPEntryForWriter(entry, w)
-			if err := w.Write(agent.ScopeGlobal, "telara", entry); err != nil {
-				autoWireTools(client, tenantID, true)
-				return
-			}
-			if pw, ok := w.(agent.PermissionWriter); ok {
-				// Repairing an existing entry: no fresh credential is in scope
-				// here, so the writer falls back to the built-in names.
-				_ = pw.WritePermissions(agent.ScopeGlobal, "telara", nil)
-			}
-			continue
 		}
 	}
+	// No state and no existing Telara entry: this is a fresh bootstrap.
+	autoWireTools(client, tenantID, true)
 }
 
 // keyBelongsToTenant checks whether the API key stored in an MCPEntry belongs
@@ -384,98 +394,25 @@ func keyBelongsToTenant(entry agent.MCPEntry, tenantID string) bool {
 	return parts[2] == tenantID
 }
 
-// restoreSnapshotAfterLogin silently restores the user's MCP config snapshot if one exists.
-// Managed entries are skipped when the tenant differs from the snapshot's tenant.
-// Returns true if any entries were restored.
+// restoreSnapshotAfterLogin preserves saved settings until their credentials
+// and configuration ownership can be verified against the server.
 func restoreSnapshotAfterLogin(userID, tenantID string) bool {
-	snap, err := agent.LoadSnapshot(userID)
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(tenantID) == "" {
+		return false
+	}
+	snap, err := agent.LoadWorkspaceSnapshot(userID, tenantID)
 	if err != nil || snap == nil {
 		return false
 	}
 
-	sametenant := snap.TenantID == "" || snap.TenantID == tenantID
-
-	origDir, _ := os.Getwd()
-
-	type restored struct{ tool, scope, path string }
-	var entries []restored
-
-	for _, se := range snap.Entries {
-		// Skip managed layer if tenant doesn't match.
-		if se.Scope == "managed" && !sametenant {
-			continue
-		}
-
-		w := agent.WriterByName(se.Tool)
-		if w == nil {
-			continue
-		}
-		entry := se.Entry
-
-		var scope agent.Scope
-		switch se.Scope {
-		case "global":
-			scope = agent.ScopeGlobal
-		case "project":
-			scope = agent.ScopeProject
-			if se.ProjectDir != "" {
-				if err := os.Chdir(se.ProjectDir); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: cannot restore project config for %s in %s: %v\n", se.Tool, se.ProjectDir, err)
-					continue
-				}
-			}
-		case "managed":
-			scope = agent.ScopeManaged
-		default:
-			continue
-		}
-
-		entry = normalizeMCPEntryForWriter(entry, w)
-		if err := w.Write(scope, se.ServerName, entry); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to restore %s %s config: %v\n", se.Scope, se.Tool, err)
-			continue
-		}
-
-		// Show path for user-visible layers only.
-		if se.Scope != "managed" {
-			if path, err := w.ConfigPath(scope); err == nil {
-				entries = append(entries, restored{se.Tool, se.Scope, path})
-			}
-		}
-
-		if scope == agent.ScopeProject && se.ProjectDir != "" {
-			_ = agent.RegisterProject(se.ProjectDir, se.Tool)
-		}
+	if snap.UserID != userID || snap.TenantID == "" || snap.TenantID != tenantID {
+		fmt.Fprintln(os.Stderr, "Warning: saved client settings do not match this account and workspace; they were not restored.")
+		return false
 	}
-
-	if origDir != "" {
-		_ = os.Chdir(origDir)
-	}
-
-	_ = agent.DeleteSnapshot(userID)
-
-	if len(entries) > 0 {
-		// A terminal gets one line naming the tools; elsewhere each config
-		// and its path, as before.
-		if display.StdoutIsTTY() {
-			var tools []string
-			seen := map[string]bool{}
-			for _, e := range entries {
-				if !seen[e.tool] {
-					seen[e.tool] = true
-					tools = append(tools, e.tool)
-				}
-			}
-			fmt.Fprintf(os.Stdout, "  Restored %d MCP config(s): %s\n\n", len(entries), strings.Join(tools, ", "))
-			return true
-		}
-		fmt.Fprintf(os.Stdout, "  Restored %d MCP config(s):\n", len(entries))
-		for _, e := range entries {
-			fmt.Fprintf(os.Stdout, "    %s (%s)  ->  %s\n", e.tool, e.scope, e.path)
-		}
-		fmt.Fprintln(os.Stdout)
-		return true
-	}
+	// Logout can revoke the cached key before saving it in this snapshot. The
+	// snapshot alone cannot establish that any key remains valid or belongs to
+	// the signed-in user and intended configuration. Never write it back as if
+	// it were a working connection, and retain it for explicit recovery.
 	return false
 }
 

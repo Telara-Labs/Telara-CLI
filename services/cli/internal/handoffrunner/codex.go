@@ -237,7 +237,10 @@ func (c *codex) accountType() (string, error) {
 // threadConfig is the whole configuration of a receiving thread. The grant session
 // is its only MCP server, marked required so the thread fails to start rather than
 // run without it. The server is the run's loopback proxy and authorization is the
-// proxy's per-run token, so Codex never holds the session credential. Every native
+// proxy's per-run token, so Codex never holds the session credential. Its tools are
+// approved in Codex: the grant session decides each call, and Codex's own prompt
+// could never be answered under approval never, which refused every call
+// (TENG-3693 B12b). Every native
 // tool is off (threadToolConfig) and the sandbox keeps writes to the run's own
 // empty directory with no network. Neither is taken on trust: the tool surface is
 // proven before any input (proveToolSurface) and checked on every model request,
@@ -246,9 +249,10 @@ func threadConfig(mcpURL, authorization string) map[string]any {
 	cfg := threadToolConfig()
 	cfg["mcp_servers"] = map[string]any{
 		AttachmentName: map[string]any{
-			"url":          mcpURL,
-			"http_headers": map[string]string{"Authorization": authorization},
-			"required":     true,
+			"url":                         mcpURL,
+			"http_headers":                map[string]string{"Authorization": authorization},
+			"required":                    true,
+			"default_tools_approval_mode": "approve",
 		},
 	}
 	cfg["sandbox_workspace_write"] = map[string]any{"network_access": false}
@@ -347,6 +351,9 @@ func (c *codex) proveToolSurface(workdir, mcpURL, authorization string, models *
 		return nil, errNoToolSurface
 	}
 	if err := checkToolSurface(visible, c.grantTools); err != nil {
+		return visible, err
+	}
+	if err := checkGrantToolsOffered(visible, c.grantTools); err != nil {
 		return visible, err
 	}
 	return visible, nil

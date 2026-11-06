@@ -59,6 +59,10 @@ func selectDeployment(client *api.Client, configID string) (*api.Deployment, err
 
 // selectConfigInteractive fetches configs and prompts the user to choose one.
 func selectConfigInteractive(client *api.Client) (*api.MCPConfig, error) {
+	state, err := agent.LoadWiredState()
+	if err != nil {
+		return nil, fmt.Errorf("load selected configuration: %w", err)
+	}
 	resp, err := client.ListConfigs(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
@@ -79,7 +83,7 @@ func selectConfigInteractive(client *api.Client) (*api.MCPConfig, error) {
 	// which, for a user who has never chosen, is their own base config
 	// (TENG-3017). Matched by config id: the base's display name embeds the
 	// user's uuid, so no name comparison can identify it reliably.
-	if state, err := agent.LoadWiredState(); err == nil && state.Global != nil {
+	if state.Global != nil {
 		for i := range resp.Configs {
 			if resp.Configs[i].ID != "" && resp.Configs[i].ID == state.Global.ConfigID {
 				prompt.Default = options[i]
@@ -102,6 +106,11 @@ func selectConfigInteractive(client *api.Client) (*api.MCPConfig, error) {
 // to all detected tools at the given scope. Keys are generated and stored
 // internally — the user never sees them.
 func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error {
+	// Check before issuing a key or modifying clients: corrupted local state
+	// must not be mistaken for an empty selection.
+	if _, err := agent.LoadWiredState(); err != nil {
+		return fmt.Errorf("load selected configuration: %w", err)
+	}
 	dep, err := selectDeployment(client, cfg.ID)
 	if err != nil {
 		return err
@@ -149,25 +158,29 @@ func wireTools(client *api.Client, cfg *api.MCPConfig, scope agent.Scope) error 
 		return fmt.Errorf("failed to configure any tools")
 	}
 
-	// Replace, don't accumulate: revoke any prior key with the same name for
-	// this config so repeated `telara setup`/`config` runs on this machine
-	// don't pile up dead duplicate keys server-side. The raw key can't be
-	// re-fetched, so we mint a fresh one (written above) and retire the rest.
-	revokeSupersededKeys(client, cfg.ID, keyName, keyResp.KeyID)
-
-	// Persist which config was wired so `telara config` can show names.
+	// Persist the selected configuration before revoking earlier keys. If the
+	// state became unreadable or unwritable after preflight, report the partial
+	// client update and keep the old keys available for recovery.
 	switch scope {
 	case agent.ScopeGlobal:
-		_ = agent.SaveWiredGlobal(cfg.ID, cfg.Name)
+		if err := agent.SaveWiredGlobal(cfg.ID, cfg.Name); err != nil {
+			return fmt.Errorf("clients were updated but selected configuration could not be saved: %w", err)
+		}
 	case agent.ScopeProject:
 		cwd, err := os.Getwd()
-		if err == nil {
-			_ = agent.SaveWiredProject(cwd, cfg.ID, cfg.Name)
-			for _, name := range wired {
-				_ = agent.RegisterProject(cwd, name)
-			}
+		if err != nil {
+			return fmt.Errorf("clients were updated but project directory is unavailable: %w", err)
+		}
+		if err := agent.SaveWiredProject(cwd, cfg.ID, cfg.Name); err != nil {
+			return fmt.Errorf("clients were updated but selected configuration could not be saved: %w", err)
+		}
+		for _, name := range wired {
+			_ = agent.RegisterProject(cwd, name)
 		}
 	}
+
+	// Retire previous keys only after the selected binding is persisted.
+	revokeSupersededKeys(client, cfg.ID, keyName, keyResp.KeyID)
 
 	// Auto-save a context so CLI diagnostic commands (doctor, whoami) can
 	// verify the key and display the active configuration.

@@ -116,7 +116,8 @@ and reports the process confinement in force, the tools Codex offers the model,
 and the outcome of native reads and writes outside the run's directory (reading
 /etc/passwd, listing /Users and your home, writing a temporary file, running a
 command). It needs no Telara login and sends nothing to a model. It fails unless
-the tools are the grant session's alone and every native attempt is refused.`,
+the tools are the grant session's alone, the stand-in's one tool is offered to the
+model directly, and every native attempt is refused.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		r, err := handoffRunner()
 		if err != nil {

@@ -34,7 +34,10 @@ var whoamiCmd = &cobra.Command{
 		if prefs.ActiveContext != "" {
 			display.PrintKV(os.Stdout, "Global config:", prefs.ActiveContext)
 		}
-		wiredState, _ := agent.LoadWiredState()
+		wiredState, err := agent.LoadWiredState()
+		if err != nil {
+			return fmt.Errorf("load selected configuration: %w", err)
+		}
 		if wiredState != nil && wiredState.Projects != nil {
 			if cwd, err := os.Getwd(); err == nil {
 				if wc, ok := wiredState.Projects[cwd]; ok && wc != nil {

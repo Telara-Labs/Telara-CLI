@@ -299,7 +299,10 @@ func runConfigStatus() error {
 	w := os.Stdout
 
 	// Load locally-stored wired config names (written by `telara config global/project`).
-	wiredState, _ := agent.LoadWiredState()
+	wiredState, err := agent.LoadWiredState()
+	if err != nil {
+		return fmt.Errorf("load selected configuration: %w", err)
+	}
 
 	fmt.Fprintln(w)
 	display.PrintSection("Configuration Layers")

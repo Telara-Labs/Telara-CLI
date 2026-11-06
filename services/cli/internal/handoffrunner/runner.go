@@ -63,7 +63,8 @@ type Runner struct {
 	Key *dpop.Key
 	// MCPTransport carries the proxied MCP calls to Telara; nil uses the CLI's own.
 	MCPTransport http.RoundTripper
-	// ModelTransport carries checked model requests upstream; nil uses the CLI's own.
+	// ModelTransport carries checked model requests upstream; nil uses the system
+	// roots (modelUpstreamTransport), never Telara's CA settings.
 	ModelTransport http.RoundTripper
 	now            func() time.Time
 	// unconfined starts Codex without process confinement. Tests only: the fake

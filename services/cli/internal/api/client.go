@@ -47,7 +47,8 @@ func NewClient(baseURL, token string) *Client {
 //
 // TLS behaviour (checked in order):
 //  1. TELARA_INSECURE=true  — skip verification entirely (escape hatch, not recommended)
-//  2. TELARA_CA_CERT_PATH   — load a custom CA bundle (local dev with self-signed cert)
+//  2. TELARA_CA_CERT_PATH   — add a custom CA bundle to the system pool (local dev
+//     with a self-signed cert); the system roots stay trusted
 //  3. default               — system CA pool (works for Let's Encrypt / public CAs)
 func NewTransport() http.RoundTripper {
 	if os.Getenv("TELARA_INSECURE") == "true" {
@@ -61,8 +62,8 @@ func NewTransport() http.RoundTripper {
 			fmt.Fprintf(os.Stderr, "error: TELARA_CA_CERT_PATH: cannot read %s: %v\n", caPath, err)
 			os.Exit(1)
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
+		pool, ok := withAddedCA(caPEM)
+		if !ok {
 			fmt.Fprintf(os.Stderr, "error: TELARA_CA_CERT_PATH: no valid certs found in %s\n", caPath)
 			os.Exit(1)
 		}
@@ -71,6 +72,18 @@ func NewTransport() http.RoundTripper {
 		}
 	}
 	return http.DefaultTransport
+}
+
+// withAddedCA is the system pool with caPEM added. The CA is added, never put in
+// place of the system roots, so a process that sets it still reaches public
+// endpoints (TENG-3693 B12b). Where the system pool cannot be read the pool holds
+// the added CA alone. ok is false when caPEM holds no certificate.
+func withAddedCA(caPEM []byte) (pool *x509.CertPool, ok bool) {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	return pool, pool.AppendCertsFromPEM(caPEM)
 }
 
 // APIError represents a non-2xx response from the Telara API.

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Deployment describes a scoped deployment of an MCP configuration.
@@ -139,7 +140,8 @@ type BaseKeyResponse struct {
 // is the union of every policy attached to every config in the tenant, so it was
 // never a safe default for an ordinary user.
 //
-// Older gateways do not serve this route; callers fall back to IssueMasterKey.
+// Older gateways may not serve this route. Callers must handle that error;
+// the CLI bootstrap does not automatically select a broader credential.
 func (c *Client) IssueBaseKey(ctx context.Context, name string) (*BaseKeyResponse, error) {
 	var resp BaseKeyResponse
 	if err := c.Post(ctx, "/v1/cli/configs/base/key", struct {
@@ -149,6 +151,9 @@ func (c *Client) IssueBaseKey(ctx context.Context, name string) (*BaseKeyRespons
 	}
 	if resp.BaseKey == "" {
 		return nil, fmt.Errorf("base key response did not include a key")
+	}
+	if strings.TrimSpace(resp.KeyID) == "" || strings.TrimSpace(resp.MCPConfigID) == "" || resp.ScopeType != "user" || strings.TrimSpace(resp.ScopeID) == "" {
+		return nil, fmt.Errorf("base key response did not include a revocable personal configuration binding")
 	}
 	return &resp, nil
 }

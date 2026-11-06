@@ -54,7 +54,7 @@ func TestInstallUsesBaseKeyAndReportsEachClient(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","key_id":"key-77","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
+		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_base_key","key_id":"key-77","mcp_config_id":"config-1","mcp_url":"https://api.telara.dev/v1/mcp","config_name":"Personal (u1)","scope_type":"user","scope_id":"u1"}`))
 	}))
 	defer server.Close()
 	// Install caches the key for `telara mcp stdio` in the credential store;
@@ -130,30 +130,25 @@ func TestInstallWritersWithConfigUsesSelectedProfileInsteadOfBaseKey(t *testing.
 	}
 }
 
-// TestInstallUsesExplicitMasterKeyAndReportsEachClient: a gateway too old to
-// serve the base route still gets a working install via the tenant master key.
-func TestInstallUsesExplicitMasterKeyAndReportsEachClient(t *testing.T) {
+// A partial client write still reports each result when the Personal key is available.
+func TestInstallReportsPartialClientFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/base/key" {
-			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
-			return
-		}
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/cli/configs/master/key" {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/cli/configs/base/key" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"master_key":"telara_mcp_tenant_key","mcp_url":"https://api.telara.dev/v1/mcp"}`))
+		_, _ = w.Write([]byte(`{"base_key":"telara_mcp_personal","key_id":"key-77","mcp_config_id":"config-1","scope_type":"user","scope_id":"u1","mcp_url":"https://api.telara.dev/v1/mcp"}`))
 	}))
 	defer server.Close()
-
+	t.Setenv("HOME", t.TempDir())
+	original := prefs
+	prefs = &config.Prefs{APIURL: server.URL}
+	defer func() { prefs = original }()
 	good := &installTestWriter{name: "codex", path: "/tmp/config.toml"}
 	bad := &installTestWriter{name: "cursor", path: "/tmp/mcp.json", writeErr: context.DeadlineExceeded}
 	results, err := installWritersWithCredential(context.Background(), api.NewClient(server.URL, "token"), []agent.AgentWriter{good, bad}, agent.ScopeGlobal)
-	if err == nil {
-		t.Fatal("expected partial failure")
-	}
-	if good.writeCall != 1 || good.written.Headers["Authorization"] != "Bearer telara_mcp_tenant_key" {
-		t.Fatalf("good writer did not receive master credential: %#v", good)
+	if err == nil || good.writeCall != 1 || good.written.Headers["Authorization"] != "Bearer telara_mcp_personal" {
+		t.Fatalf("expected partial failure after writing the Personal credential: %v", err)
 	}
 	if len(results) != 2 || results[0].status != "CONNECTED" || results[1].status != "FAILED" {
 		t.Fatalf("unexpected results: %#v", results)
@@ -190,39 +185,36 @@ func TestConfirmInstall(t *testing.T) {
 	}
 }
 
-func TestOnboardingCredentialSkipsUndeployedFallbackConfigurations(t *testing.T) {
+func TestInstallDoesNotWriteClientsWhenPersonalBootstrapFails(t *testing.T) {
+	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/base/key":
-			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/master/key":
-			http.Error(w, `{"error":"master has no deployment"}`, http.StatusNotFound)
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/resolve":
-			_, _ = w.Write([]byte(`{"managed":[],"user":[],"available":[{"id":"not-deployed","name":"Not deployed"},{"id":"ready","name":"Ready"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/not-deployed/deployments":
-			_, _ = w.Write([]byte(`{"deployments":[]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/ready/deployments":
-			_, _ = w.Write([]byte(`{"deployments":[{"id":"dep","scope_type":"tenant","scope_id":"tenant"}]}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/configs/ready/keys":
-			_, _ = w.Write([]byte(`{"id":"key-fb","raw_key":"telara_mcp_fallback","mcp_url":"https://api.telara.dev/v1/mcp"}`))
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		http.Error(w, `{"error":"personal configuration is not ready"}`, http.StatusConflict)
 	}))
 	defer server.Close()
-
-	binding, err := onboardingCredential(context.Background(), api.NewClient(server.URL, "token"), "install")
-	if err != nil {
+	t.Setenv("HOME", t.TempDir())
+	original := prefs
+	prefs = &config.Prefs{APIURL: server.URL}
+	defer func() { prefs = original }()
+	// A failed retry must not erase a previously stored credential either.
+	const previousKey = "telara_mcp_existing"
+	if err := auth.SaveMCPKey(server.URL, previousKey); err != nil {
 		t.Fatal(err)
 	}
-	if binding.RawKey != "telara_mcp_fallback" || binding.MCPURL != "https://api.telara.dev/v1/mcp" || binding.ConfigName != "Ready" {
-		t.Fatalf("unexpected fallback: %q %q %q", binding.RawKey, binding.MCPURL, binding.ConfigName)
+
+	first := &installTestWriter{name: "codex", path: "/tmp/config.toml"}
+	second := &installTestWriter{name: "cursor", path: "/tmp/mcp.json"}
+	results, err := installWritersWithCredential(context.Background(), api.NewClient(server.URL, "token"), []agent.AgentWriter{first, second}, agent.ScopeGlobal)
+	if err == nil || !strings.Contains(err.Error(), "not ready") {
+		t.Fatalf("expected readiness failure, got %v", err)
 	}
-	if binding.IsDefaultBinding {
-		t.Fatal("a deployed-config fallback must not be reported as the user's base")
+	if len(results) != 0 || first.writeCall != 0 || second.writeCall != 0 {
+		t.Fatalf("failed bootstrap changed clients: results=%v first=%d second=%d", results, first.writeCall, second.writeCall)
 	}
-	if binding.KeyID != "key-fb" {
-		t.Fatalf("fallback key id = %q, want key-fb", binding.KeyID)
+	if len(paths) != 1 || paths[0] != "POST /v1/cli/configs/base/key" {
+		t.Fatalf("failed bootstrap requested another credential: %v", paths)
+	}
+	if key, err := auth.LoadMCPKey(server.URL); err != nil || key != previousKey {
+		t.Fatalf("failed bootstrap did not preserve existing credential: %v", err)
 	}
 }

@@ -248,9 +248,12 @@ func cleanupMCPConfigs(userID, tenantID string) {
 	}
 
 	// Save snapshot before removing anything.
+	snapshotSaved := false
 	if len(entries) > 0 {
-		if err := agent.SaveSnapshot(entries, userID, tenantID); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save MCP config snapshot: %v\n", err)
+		if err := agent.SaveLogoutSnapshot(entries, userID, tenantID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: current MCP settings could not be saved before removal: %v\n", err)
+		} else {
+			snapshotSaved = true
 		}
 	}
 
@@ -320,8 +323,8 @@ func cleanupMCPConfigs(userID, tenantID string) {
 		}
 	}
 
-	if len(entries) > 0 {
-		display.PrintInfo("MCP configs saved. They will be restored automatically when you log back in.")
+	if snapshotSaved {
+		display.PrintInfo("MCP settings saved for review. After login, run `telara install` to reconnect your intended configuration.")
 	}
 }
 

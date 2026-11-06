@@ -115,12 +115,56 @@ func runInstall(command *cobra.Command, _ []string) error {
 	} else {
 		results, err = installWritersWithConfig(context.Background(), client, writers, cfg, scope, board.done)
 	}
+	if recoveryErr := reconcileInstalledSnapshot(context.Background(), client, scope, results); recoveryErr != nil {
+		fmt.Fprintf(command.ErrOrStderr(), "Warning: could not update saved client settings: %v\n", recoveryErr)
+	}
 	if board != nil {
 		board.stop(command.ErrOrStderr())
 		return err
 	}
 	printInstallResults(command.OutOrStdout(), results)
 	return err
+}
+
+// Explicit installation replaces only the successfully installed client/scope
+// entries. Other saved entries, including project settings, remain recoverable.
+func reconcileInstalledSnapshot(ctx context.Context, client *api.Client, scope agent.Scope, results []installResult) error {
+	installed := make(map[string]bool)
+	for _, result := range results {
+		if result.status == "CONNECTED" {
+			installed[result.client] = true
+		}
+	}
+	if len(installed) == 0 {
+		return nil
+	}
+	identity, err := client.ValidateToken(ctx)
+	if err != nil {
+		return fmt.Errorf("verify account: %w", err)
+	}
+	if strings.TrimSpace(identity.UserID) == "" || strings.TrimSpace(identity.TenantID) == "" {
+		return fmt.Errorf("account or workspace identity is missing")
+	}
+	snapshot, err := agent.LoadWorkspaceSnapshot(identity.UserID, identity.TenantID)
+	if err != nil || snapshot == nil {
+		return err
+	}
+	if snapshot.UserID != identity.UserID || snapshot.TenantID != identity.TenantID {
+		return fmt.Errorf("saved settings belong to a different account or workspace")
+	}
+	remaining := make([]agent.SnapshotEntry, 0, len(snapshot.Entries))
+	for _, entry := range snapshot.Entries {
+		if entry.Scope != installScopeName(scope) || !installed[entry.Tool] || entry.ServerName != "telara" {
+			remaining = append(remaining, entry)
+		}
+	}
+	if len(remaining) == len(snapshot.Entries) {
+		return nil
+	}
+	if len(remaining) == 0 {
+		return agent.DeleteWorkspaceSnapshot(identity.UserID, identity.TenantID)
+	}
+	return agent.SaveWorkspaceSnapshot(remaining, identity.UserID, identity.TenantID)
 }
 
 // selectedInstallConfig chooses an explicit install request ahead of the

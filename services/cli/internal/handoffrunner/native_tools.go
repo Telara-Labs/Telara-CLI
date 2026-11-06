@@ -88,7 +88,9 @@ func threadToolConfig() map[string]any {
 
 // neutralizeCatalog clears, for every model, the catalog entries that add a tool
 // of the model's own: apply_patch, code mode (which wraps tools in a JavaScript
-// exec tool), the sub-agent tools and the model's extra experimental tools.
+// exec tool), the sub-agent tools and the model's extra experimental tools. It
+// also turns off the search tool, which defers MCP tools behind tool_search: the
+// grant session's tools must be offered to the model directly (TENG-3693 B12b).
 func neutralizeCatalog(raw []byte) ([]byte, error) {
 	var catalog map[string]any
 	if err := json.Unmarshal(raw, &catalog); err != nil {
@@ -107,6 +109,7 @@ func neutralizeCatalog(raw []byte) ([]byte, error) {
 		model["tool_mode"] = nil
 		model["multi_agent_version"] = nil
 		model["experimental_supported_tools"] = []any{}
+		model["supports_search_tool"] = false
 	}
 	return json.Marshal(catalog)
 }

@@ -172,6 +172,9 @@ func TestOnboardingCredentialCarriesTheConfigIdentity(t *testing.T) {
 			"mcp_url":       "https://api.telara.dev/v1/mcp/sse",
 			"mcp_config_id": wantConfigID,
 			"config_name":   displayName,
+			"key_id":        "key-77",
+			"scope_type":    "user",
+			"scope_id":      "034c5aa3-d3d0-476b-8fe3-1ea1fa93ae06",
 		})
 	}))
 	defer server.Close()

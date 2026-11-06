@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,7 +64,7 @@ func wiredStatePath() (string, error) {
 func LoadWiredState() (*WiredState, error) {
 	path, err := wiredStatePath()
 	if err != nil {
-		return &WiredState{}, nil
+		return &WiredState{}, fmt.Errorf("locate wired state: %w", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -71,12 +72,15 @@ func LoadWiredState() (*WiredState, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return &WiredState{}, nil
 		}
-		return nil, fmt.Errorf("read wired state: %w", err)
+		return &WiredState{}, fmt.Errorf("read wired state: %w", err)
 	}
 
 	var state WiredState
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return &WiredState{}, fmt.Errorf("parse wired state: expected an object")
+	}
 	if err := json.Unmarshal(data, &state); err != nil {
-		return &WiredState{}, nil // corrupted file — start fresh
+		return &WiredState{}, fmt.Errorf("parse wired state: %w", err)
 	}
 	return &state, nil
 }
@@ -95,14 +99,20 @@ func SaveWiredGlobalDefault(configID, configName string) error {
 }
 
 func saveWiredGlobal(configID, configName, source string) error {
-	state, _ := LoadWiredState()
+	state, err := LoadWiredState()
+	if err != nil {
+		return err
+	}
 	state.Global = &WiredConfig{ConfigID: configID, ConfigName: configName, Source: source}
 	return saveWiredState(state)
 }
 
 // SaveWiredProject records that a config was wired at project scope for a path.
 func SaveWiredProject(projectPath, configID, configName string) error {
-	state, _ := LoadWiredState()
+	state, err := LoadWiredState()
+	if err != nil {
+		return err
+	}
 	if state.Projects == nil {
 		state.Projects = make(map[string]*WiredConfig)
 	}

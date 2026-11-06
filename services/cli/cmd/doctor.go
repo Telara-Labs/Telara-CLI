@@ -306,7 +306,10 @@ func checkProjectContext() checkResult {
 		}
 	}
 
-	wiredState, _ := agent.LoadWiredState()
+	wiredState, err := agent.LoadWiredState()
+	if err != nil {
+		return checkResult{name: "project context", status: "fail", message: fmt.Sprintf("cannot read selected configuration: %v", err)}
+	}
 	if wiredState == nil || wiredState.Projects == nil {
 		return checkResult{name: "project context", status: "skip", message: "no project config set for this directory"}
 	}
