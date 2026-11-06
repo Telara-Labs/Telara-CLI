@@ -35,12 +35,16 @@ var handoffRunnerCmd = &cobra.Command{
 	Short: "Run work you accepted for your own Codex, on this machine",
 	Long: `The runner starts your own Codex for handoffs you accepted for it, on this
 machine, under your own Telara login and your own Codex login. Each run gets a
-fresh thread whose only tool connection is that work's grant, in an empty working
-directory with no network, and it stops when Telara says stop or the grant ends.
+fresh thread whose only tools are that work's grant: Codex's own shell, file,
+image, web and browser tools are off, and the runner proves it before any input
+and checks every model request. On macOS the Codex process is also confined to
+the runner's home and the run's empty directory, with no network but the run's
+own loopback proxies. It stops when Telara says stop or the grant ends.
 
 Set up once:
   telara handoff runner setup
   telara handoff runner login     sign in to Codex inside the runner's own home
+  telara handoff runner check     show what Codex can reach, and prove it is contained
 
 Then:
   telara handoff runner run`,
@@ -104,6 +108,27 @@ on this machine; Telara never receives it.`,
 	},
 }
 
+var handoffRunnerCheckCmd = &cobra.Command{
+	Use:   "check",
+	Short: "Show what the runner's Codex can reach, and prove it is contained",
+	Long: `Starts Codex exactly as a run would, with a local stand-in for a grant session,
+and reports the process confinement in force, the tools Codex offers the model,
+and the outcome of native reads and writes outside the run's directory (reading
+/etc/passwd, listing /Users and your home, writing a temporary file, running a
+command). It needs no Telara login and sends nothing to a model. It fails unless
+the tools are the grant session's alone and every native attempt is refused.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r, err := handoffRunner()
+		if err != nil {
+			return err
+		}
+		if err := r.PrepareHome(); err != nil {
+			return err
+		}
+		return r.Check(os.Stdout)
+	},
+}
+
 var handoffRunnerRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start your own Codex for the handoffs you accepted for it",
@@ -140,7 +165,7 @@ var handoffRunnerRunCmd = &cobra.Command{
 }
 
 func init() {
-	for _, c := range []*cobra.Command{handoffRunnerSetupCmd, handoffRunnerLoginCmd, handoffRunnerRunCmd} {
+	for _, c := range []*cobra.Command{handoffRunnerSetupCmd, handoffRunnerLoginCmd, handoffRunnerCheckCmd, handoffRunnerRunCmd} {
 		c.Flags().StringVar(&handoffRunnerDir, "dir", "", "the runner's own directory (default ~/.telara/handoff-runner)")
 		c.Flags().StringVar(&handoffRunnerCodexBin, "codex-bin", "codex", "the codex program")
 	}
@@ -148,7 +173,7 @@ func init() {
 	handoffRunnerRunCmd.Flags().BoolVar(&handoffRunnerOnce, "once", false, "serve the waiting runs and exit")
 	handoffRunnerRunCmd.Flags().DurationVar(&handoffRunnerInterval, "interval", 15*time.Second, "how often to look for new runs")
 	handoffRunnerRunCmd.Flags().DurationVar(&handoffRunnerBeat, "heartbeat", 5*time.Second, "how often a running run is reported, and so how soon a stop lands")
-	handoffRunnerCmd.AddCommand(handoffRunnerSetupCmd, handoffRunnerLoginCmd, handoffRunnerRunCmd)
+	handoffRunnerCmd.AddCommand(handoffRunnerSetupCmd, handoffRunnerLoginCmd, handoffRunnerCheckCmd, handoffRunnerRunCmd)
 	handoffCmd.AddCommand(handoffRunnerCmd)
 	rootCmd.AddCommand(handoffCmd)
 }

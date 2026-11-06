@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -24,6 +23,8 @@ type codex struct {
 	in      io.WriteCloser
 	version string
 	thread  string
+	// grantTools are the grant session's tools as the run's thread lists them.
+	grantTools []string
 
 	mu      sync.Mutex
 	n       int
@@ -37,21 +38,43 @@ type codex struct {
 // through notifications for as long as the grant lasts.
 var callTimeout = 2 * time.Minute
 
+// launch is how one Codex process starts.
+type launch struct {
+	Bin, Home, Workdir string
+	// Catalog is the tool-free model catalog (writeToolFreeCatalog); "" omits it.
+	Catalog string
+	// ModelURL is the runner's model proxy, Codex's openai_base_url; "" omits it.
+	ModelURL string
+	// Confine, when set, starts the process under the platform's confinement.
+	Confine *confinement
+}
+
+// args are app-server's command line: native tools off, the tool-free catalog,
+// model traffic to the runner's model proxy, and Codex's own credentials kept in
+// its home's files rather than the person's keychain.
+func (l launch) args() []string {
+	args := appServerArgs(l.Catalog)
+	if l.ModelURL != "" {
+		b, _ := json.Marshal(l.ModelURL)
+		args = append(args, "-c", "openai_base_url="+string(b))
+	}
+	return append(args, "-c", `cli_auth_credentials_store="file"`, "-c", `mcp_oauth_credentials_store="file"`)
+}
+
 // startCodex starts app-server with only the dedicated home in its environment.
 // Nothing of the person's own Codex configuration or environment is inherited, so
 // no standing MCP server, profile or credential of theirs reaches the run.
-func startCodex(bin, home, workdir string) (*codex, error) {
-	var env []string
-	for _, key := range []string{"PATH", "LANG", "TMPDIR", "SYSTEMROOT", "WINDIR"} {
-		if v, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+v)
+func startCodex(l launch) (*codex, error) {
+	cmd := exec.Command(l.Bin, l.args()...)
+	cmd.Dir = l.Workdir
+	tmp := ""
+	if l.Confine != nil {
+		tmp = l.Confine.Tmp
+		if _, err := confineCommand(cmd, l.Confine); err != nil {
+			return nil, err
 		}
 	}
-	// Codex reads its home from CODEX_HOME. This points it at the runner's own
-	// isolated home; it is Codex's variable, set for the child process only.
-	env = append(env, "CODEX_HOME="+home, "HOME="+home)
-	cmd := exec.Command(bin, "app-server")
-	cmd.Dir, cmd.Env = workdir, env
+	cmd.Env = childEnv(l.Home, tmp)
 	isolateProcess(cmd)
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -189,36 +212,47 @@ func (c *codex) call(method string, params any) (map[string]any, error) {
 // signedIn reads the account with refresh off. Nil means not signed in: the person
 // has not logged in to Codex inside the runner's own home.
 func (c *codex) signedIn() (bool, error) {
+	kind, err := c.accountType()
+	return kind != "", err
+}
+
+// accountType is how the runner's home is signed in ("apiKey", "chatgpt"), or ""
+// when it is not.
+func (c *codex) accountType() (string, error) {
 	r, err := c.call("account/read", map[string]any{"refreshToken": false})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	account, _ := r["account"].(map[string]any)
-	return len(account) > 0, nil
+	if len(account) == 0 {
+		return "", nil
+	}
+	kind, _ := account["type"].(string)
+	if kind == "" {
+		kind = "unknown"
+	}
+	return kind, nil
 }
 
 // threadConfig is the whole configuration of a receiving thread. The grant session
 // is its only MCP server, marked required so the thread fails to start rather than
 // run without it. The server is the run's loopback proxy and authorization is the
-// proxy's per-run token, so Codex never holds the session credential. The sandbox keeps writes to the run's own empty directory with
-// no network, and web search is off, so native tools cannot reach around the grant.
-// Codex's sandbox is its own enforcement: whether it confines every native path for
-// a given account and version is a qualification question, not settled here.
+// proxy's per-run token, so Codex never holds the session credential. Every native
+// tool is off (threadToolConfig) and the sandbox keeps writes to the run's own
+// empty directory with no network. Neither is taken on trust: the tool surface is
+// proven before any input (proveToolSurface) and checked on every model request,
+// and the process itself is confined where the platform allows (confine.go).
 func threadConfig(mcpURL, authorization string) map[string]any {
-	return map[string]any{
-		"mcp_servers": map[string]any{
-			AttachmentName: map[string]any{
-				"url":          mcpURL,
-				"http_headers": map[string]string{"Authorization": authorization},
-				"required":     true,
-			},
+	cfg := threadToolConfig()
+	cfg["mcp_servers"] = map[string]any{
+		AttachmentName: map[string]any{
+			"url":          mcpURL,
+			"http_headers": map[string]string{"Authorization": authorization},
+			"required":     true,
 		},
-		"sandbox_workspace_write": map[string]any{"network_access": false},
-		"tools":                   map[string]any{"web_search": false},
-		"web_search":              "disabled",
-		// Codex adds a built-in MCP server (codex_apps) unless apps are off.
-		"features": map[string]any{"apps": false},
 	}
+	cfg["sandbox_workspace_write"] = map[string]any{"network_access": false}
+	return cfg
 }
 
 // checkOnlyGrantServer fails closed unless the grant session is the thread's only
@@ -245,30 +279,77 @@ func checkOnlyGrantServer(status map[string]any) error {
 	return nil
 }
 
-// startThread opens one ephemeral thread bound to the grant session, with no input,
-// and proves the session is its one and only attachment before anything is sent.
-func (c *codex) startThread(workdir, mcpURL, authorization string) error {
+// openThread opens one ephemeral thread with the run's configuration and returns
+// its id and its MCP servers' status.
+func (c *codex) openThread(workdir, mcpURL, authorization string) (string, map[string]any, error) {
 	started, err := c.call("thread/start", map[string]any{
 		"ephemeral": true, "cwd": workdir, "approvalPolicy": "never", "sandbox": "workspace-write",
 		"config": threadConfig(mcpURL, authorization),
 	})
 	if err != nil {
-		return fmt.Errorf("the grant session could not be attached: %w", err)
+		return "", nil, fmt.Errorf("the grant session could not be attached: %w", err)
 	}
+	var id string
 	if th, ok := started["thread"].(map[string]any); ok {
-		c.thread, _ = th["id"].(string)
+		id, _ = th["id"].(string)
 	}
-	if c.thread == "" {
-		c.thread, _ = started["threadId"].(string)
+	if id == "" {
+		id, _ = started["threadId"].(string)
 	}
-	if c.thread == "" {
-		return errors.New("codex did not name the thread")
+	if id == "" {
+		return "", nil, errors.New("codex did not name the thread")
 	}
-	status, err := c.call("mcpServerStatus/list", map[string]any{"threadId": c.thread, "limit": 100})
+	status, err := c.call("mcpServerStatus/list", map[string]any{"threadId": id, "limit": 100})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := checkOnlyGrantServer(status); err != nil {
+		return "", nil, err
+	}
+	return id, status, nil
+}
+
+// startThread opens the run's thread bound to the grant session, with no input,
+// and proves the session is its one and only attachment before anything is sent.
+func (c *codex) startThread(workdir, mcpURL, authorization string) error {
+	id, status, err := c.openThread(workdir, mcpURL, authorization)
 	if err != nil {
 		return err
 	}
-	return checkOnlyGrantServer(status)
+	c.thread, c.grantTools = id, grantToolNames(status)
+	return nil
+}
+
+// probeTimeout bounds the tool-surface probe.
+var probeTimeout = time.Minute
+
+// proveToolSurface reads the tools this Codex process offers the model, before
+// any input, and fails closed naming each one that is not the grant session's.
+// It opens a second thread with the same configuration and sends it one fixed
+// word; the model proxy answers that request itself, so nothing leaves the
+// machine and the run's own thread carries no probe. It returns what was seen.
+func (c *codex) proveToolSurface(workdir, mcpURL, authorization string, models *modelProxy) ([]toolRef, error) {
+	id, _, err := c.openThread(workdir, mcpURL, authorization)
+	if err != nil {
+		return nil, fmt.Errorf("tool probe: %w", err)
+	}
+	seen := models.expectProbe(id)
+	defer models.endProbe(id)
+	if _, err := c.call("turn/start", map[string]any{"threadId": id, "input": []map[string]any{{"type": "text", "text": "probe"}}}); err != nil {
+		return nil, fmt.Errorf("tool probe: %w", err)
+	}
+	var visible []toolRef
+	select {
+	case visible = <-seen:
+	case <-c.exited:
+		return nil, errors.New("tool probe: codex exited")
+	case <-time.After(probeTimeout):
+		return nil, errNoToolSurface
+	}
+	if err := checkToolSurface(visible, c.grantTools); err != nil {
+		return visible, err
+	}
+	return visible, nil
 }
 
 // startTurn sends the first and only input.
@@ -293,12 +374,16 @@ func (c *codex) interrupt() {
 	}
 }
 
-// turnOutcome reads one notification as the end of the turn, if it is one.
-func turnOutcome(m map[string]any) (string, bool) {
+// turnOutcome reads one notification as the end of a turn of the given thread,
+// if it is one. A probe thread's turn is never read as the run's.
+func turnOutcome(m map[string]any, thread string) (string, bool) {
 	if m["method"] != "turn/completed" {
 		return "", false
 	}
 	params, _ := m["params"].(map[string]any)
+	if id, _ := params["threadId"].(string); id != "" && id != thread {
+		return "", false
+	}
 	turn, _ := params["turn"].(map[string]any)
 	status, _ := turn["status"].(string)
 	if status == "" {
@@ -316,7 +401,7 @@ func (c *codex) waitTurn(ctx context.Context) (string, error) {
 		case <-c.exited:
 			return "", errors.New("codex exited during the turn")
 		case m := <-c.events:
-			if status, ok := turnOutcome(m); ok {
+			if status, ok := turnOutcome(m, c.thread); ok {
 				return status, nil
 			}
 		}

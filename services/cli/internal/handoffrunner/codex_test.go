@@ -77,7 +77,7 @@ func reachable(status int) *httptest.Server {
 }
 
 func TestCodexIsolatedHomeReportsNotSignedIn(t *testing.T) {
-	c, err := startCodex(fakeCodexBin, privateHome(t, false), t.TempDir())
+	c, err := startCodex(launch{Bin: fakeCodexBin, Home: privateHome(t, false), Workdir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestCodexThreadHasOnlyTheGrantSessionAndNothingIsSentBeforeIt(t *testing.T)
 	defer proxy.close()
 	home := privateHome(t, true)
 	work := t.TempDir()
-	c, err := startCodex(fakeCodexBin, home, work)
+	c, err := startCodex(launch{Bin: fakeCodexBin, Home: home, Workdir: work})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestCodexRequiredAttachmentThatCannotInitializeFailsTheThread(t *testing.T)
 	mcp := reachable(http.StatusUnauthorized)
 	defer mcp.Close()
 	home := privateHome(t, true)
-	c, err := startCodex(fakeCodexBin, home, t.TempDir())
+	c, err := startCodex(launch{Bin: fakeCodexBin, Home: home, Workdir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestCodexTurnEndsOnInterrupt(t *testing.T) {
 	defer mcp.Close()
 	home := privateHome(t, true)
 	work := t.TempDir()
-	c, err := startCodex(fakeCodexBin, home, work)
+	c, err := startCodex(launch{Bin: fakeCodexBin, Home: home, Workdir: work})
 	if err != nil {
 		t.Fatal(err)
 	}

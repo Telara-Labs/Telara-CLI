@@ -63,7 +63,12 @@ type Runner struct {
 	Key *dpop.Key
 	// MCPTransport carries the proxied MCP calls to Telara; nil uses the CLI's own.
 	MCPTransport http.RoundTripper
-	now          func() time.Time
+	// ModelTransport carries checked model requests upstream; nil uses the CLI's own.
+	ModelTransport http.RoundTripper
+	now            func() time.Time
+	// unconfined starts Codex without process confinement. Tests only: the fake
+	// Codex is a Go test binary outside any confinement's allowed paths.
+	unconfined bool
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -220,13 +225,45 @@ func (r *Runner) Once(ctx context.Context) error {
 	return nil
 }
 
+// launchFor prepares one Codex process for workdir: the tool-free catalog, the
+// model proxy's URL and, where the platform has one, the process confinement
+// allowing only the given loopback ports. On a platform that should confine
+// (macOS, or Linux with bubblewrap) a confinement that cannot be built refuses
+// the run; elsewhere the run relies on the proven tool surface alone, and says so.
+func (r *Runner) launchFor(workdir, modelURL string, ports ...int) (launch, string, error) {
+	l := launch{Bin: r.CodexBin, Home: r.CodexHome(), Workdir: workdir, ModelURL: modelURL}
+	catalog, err := writeToolFreeCatalog(r.CodexBin, r.CodexHome())
+	if err != nil {
+		return l, "", err
+	}
+	l.Catalog = catalog
+	if r.unconfined {
+		return l, "", nil
+	}
+	name, available := confinementAvailable()
+	if !available {
+		r.logf("handoff runner: %s; the Codex process is not confined, and runs only because its native tools are proven off", name)
+		return l, "", nil
+	}
+	c, err := newConfinement(r.CodexBin, r.CodexHome(), workdir, ports...)
+	if err != nil {
+		return l, "", fmt.Errorf("the Codex process cannot be confined (%s): %w", name, err)
+	}
+	l.Confine = c
+	return l, name, nil
+}
+
 // probeSignIn starts Codex in the runner's home and reads the account, refresh off.
 func (r *Runner) probeSignIn() error {
 	dir := filepath.Join(r.Dir, "runs", "sign-in-check")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	agent, err := startCodex(r.CodexBin, r.CodexHome(), dir)
+	l, _, err := r.launchFor(dir, "")
+	if err != nil {
+		return err
+	}
+	agent, err := startCodex(l)
 	if err != nil {
 		return err
 	}
@@ -285,7 +322,27 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 		report(api.HandoffRunCancelled)
 		return err
 	}
-	agent, err := startCodex(r.CodexBin, r.CodexHome(), workdir)
+	// Codex reaches the session only through this run's proxy, which proves the
+	// runner's key on every call, and the model only through the model proxy,
+	// which checks the tools in every request. Both close when the run ends.
+	proxy, err := startSessionProxy(r.MCPURL, claim.Credential, r.Key, r.MCPTransport, r.logf)
+	if err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	defer proxy.close()
+	models, err := startModelProxy(r.ModelTransport, r.logf)
+	if err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	defer models.close()
+	l, confined, err := r.launchFor(workdir, models.URL(), models.port(), proxy.port())
+	if err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	agent, err := startCodex(l)
 	if err != nil {
 		report(api.HandoffRunCancelled)
 		return err
@@ -296,25 +353,37 @@ func (r *Runner) Serve(ctx context.Context, run api.HandoffRun) error {
 		report(api.HandoffRunCancelled)
 		return err
 	}
-	signedIn, err := agent.signedIn()
-	if err != nil || !signedIn {
+	kind, err := agent.accountType()
+	if err != nil || kind == "" {
 		report(api.HandoffRunCancelled)
 		return errors.New("Codex is not signed in in the runner's own home (run: telara handoff runner login)")
 	}
-	// Codex reaches the session only through this run's proxy, which proves the
-	// runner's key on every call. It closes when the run ends.
-	proxy, err := startSessionProxy(r.MCPURL, claim.Credential, r.Key, r.MCPTransport, r.logf)
+	upstream, err := upstreamFor(kind)
 	if err != nil {
 		report(api.HandoffRunCancelled)
 		return err
 	}
-	defer proxy.close()
 	// The attachment comes first. Required, so a session that cannot initialize
 	// fails the thread and no input is ever sent.
 	if err := agent.startThread(workdir, proxy.URL(), proxy.localAuthorization()); err != nil {
 		report(api.HandoffRunCancelled)
 		return err
 	}
+	// Then the tool surface: before any input, the tools Codex would offer the
+	// model must be the grant session's alone. Only then does the model proxy
+	// forward anything, and it checks every later request the same way.
+	if _, err := agent.proveToolSurface(workdir, proxy.URL(), proxy.localAuthorization(), models); err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	if err := models.arm(agent.grantTools, upstream); err != nil {
+		report(api.HandoffRunCancelled)
+		return err
+	}
+	if confined == "" {
+		confined = "not confined"
+	}
+	r.logf("run %s: Codex %s offers only the grant session's tools (%d); process confinement: %s", run.ExecutionID, agent.version, len(agent.grantTools), confined)
 	thread := codexThread{agent: agent, workdir: workdir, mcpURL: proxy.URL(), localAuthorizing: proxy.localAuthorization()}
 	input, err := takeFirstInput(runCtx, r.Control, run.ExecutionID, claim.IncarnationID, thread, r.logf)
 	if err != nil {

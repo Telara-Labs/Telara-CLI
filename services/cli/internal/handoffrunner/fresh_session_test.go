@@ -117,7 +117,7 @@ func TestCodexThreadReopensANewThreadOfTheSameAgent(t *testing.T) {
 	defer proxy.close()
 	home := privateHome(t, true)
 	work := t.TempDir()
-	c, err := startCodex(fakeCodexBin, home, work)
+	c, err := startCodex(launch{Bin: fakeCodexBin, Home: home, Workdir: work})
 	if err != nil {
 		t.Fatal(err)
 	}

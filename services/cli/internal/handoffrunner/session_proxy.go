@@ -126,3 +126,6 @@ func (p *sessionProxy) close() {
 	}
 	_ = p.server.Close()
 }
+
+// port is the loopback port, for the confinement's network rule.
+func (p *sessionProxy) port() int { return p.listener.Addr().(*net.TCPAddr).Port }

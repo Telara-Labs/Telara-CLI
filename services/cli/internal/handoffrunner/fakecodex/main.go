@@ -7,7 +7,12 @@
 // initializes every required MCP server at thread start by calling it with the
 // configured headers, failing the thread when one refuses. The brief selects what
 // the turn does: "fake:complete" makes one tool call and completes, "fake:hang"
-// keeps calling until interrupted, "fake:fail" fails. Every call it makes and
+// keeps calling until interrupted, "fake:fail" fails. Like Codex, every turn
+// first sends one model request to its openai_base_url (-c on its command line),
+// offering the tools Codex would: the grant session's MCP helpers, plus the
+// native shell tool unless it was started with --disable shell_tool, and a turn
+// whose model request is refused fails. "debug models --bundled" prints a small
+// catalog with a native apply_patch entry. Every call it makes and
 // everything it was given is appended to fake-codex.jsonl in its home, with the
 // Authorization header reduced to its scheme and a digest.
 package main
@@ -34,6 +39,9 @@ type server struct {
 }
 
 type fake struct {
+	modelURL  string
+	disabled  map[string]bool
+	catalog   string
 	mu        sync.Mutex
 	out       *bufio.Writer
 	home      string
@@ -165,8 +173,72 @@ func (f *fake) turn(mode string) {
 	}
 }
 
+// parseArgs reads the app-server command line the way the runner writes it.
+func (f *fake) parseArgs(args []string) {
+	f.disabled = map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--disable":
+			if i+1 < len(args) {
+				f.disabled[args[i+1]] = true
+				i++
+			}
+		case "-c":
+			if i+1 < len(args) {
+				k, v, _ := strings.Cut(args[i+1], "=")
+				var s string
+				if json.Unmarshal([]byte(v), &s) == nil {
+					switch k {
+					case "openai_base_url":
+						f.modelURL = s
+					case "model_catalog_json":
+						f.catalog = s
+					}
+				}
+				i++
+			}
+		}
+	}
+}
+
+// modelRequest sends the turn's one model request and reports whether it was
+// accepted.
+func (f *fake) modelRequest(thread string) bool {
+	if f.modelURL == "" {
+		return true
+	}
+	tools := []any{
+		map[string]any{"type": "function", "name": "list_mcp_resources"},
+		map[string]any{"type": "tool_search"},
+	}
+	if !f.disabled["shell_tool"] {
+		tools = append(tools, map[string]any{"type": "function", "name": "exec_command"})
+	}
+	body, _ := json.Marshal(map[string]any{"model": "fake", "tools": tools, "input": []any{}})
+	req, err := http.NewRequest(http.MethodPost, f.modelURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("thread-id", thread)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	code := 0
+	if err == nil {
+		code = resp.StatusCode
+		resp.Body.Close()
+	}
+	f.record("model_request", map[string]any{"status": code, "thread": thread, "catalog": f.catalog != ""})
+	return code >= 200 && code <= 299
+}
+
 func main() {
+	if len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models" {
+		fmt.Println(`{"models":[{"slug":"fake","apply_patch_tool_type":"freeform","tool_mode":"code","multi_agent_version":"v2","experimental_supported_tools":["x"]}]}`)
+		return
+	}
 	f := &fake{out: bufio.NewWriter(os.Stdout), home: os.Getenv("CODEX_HOME"), interrupt: make(chan struct{}, 1)}
+	f.parseArgs(os.Args[1:])
+	f.record("start", map[string]any{"args": os.Args[1:], "env": os.Environ()})
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for sc.Scan() {
@@ -194,7 +266,7 @@ func main() {
 		case "mcpServerStatus/list":
 			data := []any{}
 			for name := range f.servers {
-				data = append(data, map[string]any{"name": name})
+				data = append(data, map[string]any{"name": name, "tools": map[string]any{}})
 			}
 			f.send(map[string]any{"id": id, "result": map[string]any{"data": data}})
 		case "turn/start":
@@ -213,7 +285,25 @@ func main() {
 			sum := sha256.Sum256([]byte(text))
 			f.record("turn_start", map[string]any{"mode": mode, "text_digest": hex.EncodeToString(sum[:]), "names_task": strings.Contains(text, "Your task id: ")})
 			f.send(map[string]any{"id": id, "result": map[string]any{"turn": map[string]any{"id": "turn-1", "status": "inProgress"}}})
-			go f.turn(mode)
+			thread := f.thread
+			if th, _ := params["threadId"].(string); th != "" {
+				thread = th
+			}
+			go func() {
+				f.mu.Lock()
+				f.thread = thread
+				f.mu.Unlock()
+				if !f.modelRequest(thread) {
+					f.send(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread, "turn": map[string]any{"id": "turn-1", "status": "failed"}}})
+					f.record("turn_end", map[string]any{"status": "failed", "thread": thread})
+					return
+				}
+				if text == "probe" {
+					f.send(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread, "turn": map[string]any{"id": "turn-p", "status": "completed"}}})
+					return
+				}
+				f.turn(mode)
+			}()
 		case "turn/interrupt":
 			f.record("interrupt", map[string]any{})
 			select {
