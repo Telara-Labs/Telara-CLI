@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const codexServersKey = "mcp_servers"
@@ -19,7 +21,7 @@ func NewCodexWriter() AgentWriter {
 	return &codexWriter{homeDir: home}
 }
 
-func (w *codexWriter) Name() string { return "codex" }
+func (w *codexWriter) Name() string { return clientidentity.Codex }
 
 func (w *codexWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".codex")) || binaryInPath("codex")

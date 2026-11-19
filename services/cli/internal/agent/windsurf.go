@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const windsurfServersKey = "mcpServers"
@@ -19,7 +21,7 @@ func NewWindsurfWriter() AgentWriter {
 	return &windsurfWriter{homeDir: home}
 }
 
-func (w *windsurfWriter) Name() string { return "windsurf" }
+func (w *windsurfWriter) Name() string { return clientidentity.Windsurf }
 
 func (w *windsurfWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".codeium", "windsurf"))

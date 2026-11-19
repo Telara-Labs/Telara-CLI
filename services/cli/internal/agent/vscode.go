@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 // VS Code uses "servers" (not "mcpServers") as the top-level key in mcp.json.
@@ -21,7 +23,7 @@ func NewVSCodeWriter() AgentWriter {
 	return &vscodeWriter{homeDir: home}
 }
 
-func (w *vscodeWriter) Name() string { return "vscode" }
+func (w *vscodeWriter) Name() string { return clientidentity.VSCode }
 
 func (w *vscodeWriter) Detect() bool {
 	return binaryInPath("code") || dirExists(filepath.Join(w.homeDir, ".vscode"))
@@ -75,4 +77,3 @@ func (w *vscodeWriter) Remove(scope Scope, serverName string) error {
 	}
 	return removeEntry(path, vscodeServersKey, serverName)
 }
-

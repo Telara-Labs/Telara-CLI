@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const cursorServersKey = "mcpServers"
@@ -19,7 +21,7 @@ func NewCursorWriter() AgentWriter {
 	return &cursorWriter{homeDir: home}
 }
 
-func (w *cursorWriter) Name() string { return "cursor" }
+func (w *cursorWriter) Name() string { return clientidentity.Cursor }
 
 func (w *cursorWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".cursor"))

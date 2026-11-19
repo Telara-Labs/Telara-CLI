@@ -1,0 +1,414 @@
+{
+  "schema_version": 1,
+  "status": "provisional",
+  "identities": [
+    {
+      "id": "claude",
+      "display_name": "Claude",
+      "logo_key": "anthropic",
+      "kind": "client",
+      "cli_writer": "claude-code",
+      "cli_symbol": "ClaudeCode"
+    },
+    {
+      "id": "codex",
+      "display_name": "Codex",
+      "logo_key": "openai",
+      "kind": "client",
+      "cli_writer": "codex",
+      "cli_symbol": "Codex"
+    },
+    {
+      "id": "cursor",
+      "display_name": "Cursor",
+      "logo_key": "cursor",
+      "kind": "client",
+      "cli_writer": "cursor",
+      "cli_symbol": "Cursor"
+    },
+    {
+      "id": "windsurf",
+      "display_name": "Windsurf",
+      "logo_key": "windsurf",
+      "kind": "client",
+      "cli_writer": "windsurf",
+      "cli_symbol": "Windsurf"
+    },
+    {
+      "id": "vscode",
+      "display_name": "VS Code",
+      "logo_key": "vscode",
+      "kind": "client",
+      "cli_writer": "vscode",
+      "cli_symbol": "VSCode"
+    },
+    {
+      "id": "github_copilot",
+      "display_name": "GitHub Copilot",
+      "logo_key": "github",
+      "kind": "client"
+    },
+    {
+      "id": "continue",
+      "display_name": "Continue",
+      "logo_key": "continue",
+      "kind": "client"
+    },
+    {
+      "id": "cline",
+      "display_name": "Cline",
+      "logo_key": "cline",
+      "kind": "client"
+    },
+    {
+      "id": "roo_code",
+      "display_name": "Roo Code",
+      "logo_key": "roo-code",
+      "kind": "client"
+    },
+    {
+      "id": "aider",
+      "display_name": "Aider",
+      "logo_key": "aider",
+      "kind": "client"
+    },
+    {
+      "id": "goose",
+      "display_name": "Goose",
+      "logo_key": "goose",
+      "kind": "client"
+    },
+    {
+      "id": "zed",
+      "display_name": "Zed",
+      "logo_key": "zed",
+      "kind": "client"
+    },
+    {
+      "id": "langchain",
+      "display_name": "LangChain",
+      "logo_key": "langchain",
+      "kind": "client"
+    },
+    {
+      "id": "langgraph",
+      "display_name": "LangGraph",
+      "logo_key": "langgraph",
+      "kind": "client"
+    },
+    {
+      "id": "crewai",
+      "display_name": "CrewAI",
+      "logo_key": "crewai",
+      "kind": "client"
+    },
+    {
+      "id": "autogen",
+      "display_name": "AutoGen / AG2",
+      "logo_key": "autogen",
+      "kind": "client"
+    },
+    {
+      "id": "llamaindex",
+      "display_name": "LlamaIndex",
+      "logo_key": "llamaindex",
+      "kind": "client"
+    },
+    {
+      "id": "openai_agents",
+      "display_name": "OpenAI Agents SDK",
+      "logo_key": "openai",
+      "kind": "client"
+    },
+    {
+      "id": "chatgpt",
+      "display_name": "ChatGPT",
+      "logo_key": "openai",
+      "kind": "client"
+    },
+    {
+      "id": "openai_hosted",
+      "display_name": "OpenAI",
+      "logo_key": "openai",
+      "kind": "client"
+    },
+    {
+      "id": "perplexity",
+      "display_name": "Perplexity",
+      "logo_key": "perplexity",
+      "kind": "client"
+    },
+    {
+      "id": "m365_copilot",
+      "display_name": "Microsoft 365 Copilot",
+      "logo_key": "microsoft-365",
+      "kind": "client",
+      "catalog_id": "microsoft_copilot"
+    },
+    {
+      "id": "gemini",
+      "display_name": "Gemini",
+      "logo_key": "gemini",
+      "kind": "client",
+      "cli_writer": "gemini",
+      "cli_symbol": "Gemini"
+    },
+    {
+      "id": "frozen",
+      "display_name": "Frozen profile",
+      "logo_key": null,
+      "kind": "profile"
+    },
+    {
+      "id": "promoted",
+      "display_name": "Promoted profile",
+      "logo_key": null,
+      "kind": "profile"
+    },
+    {
+      "id": "unknown",
+      "display_name": "Other / Unknown",
+      "logo_key": null,
+      "kind": "unknown"
+    },
+    {
+      "id": "amazon_q",
+      "display_name": "Amazon Q",
+      "logo_key": "amazon-q",
+      "kind": "client",
+      "cli_writer": "amazon-q",
+      "cli_symbol": "AmazonQ"
+    },
+    {
+      "id": "devin",
+      "display_name": "Devin",
+      "logo_key": "devin",
+      "kind": "client",
+      "catalog_id": "devin"
+    },
+    {
+      "id": "sana",
+      "display_name": "Sana",
+      "logo_key": "sana",
+      "kind": "client",
+      "catalog_id": "sana"
+    },
+    {
+      "id": "glean",
+      "display_name": "Glean",
+      "logo_key": "glean",
+      "kind": "client"
+    },
+    {
+      "id": "a2a",
+      "display_name": "A2A",
+      "logo_key": null,
+      "kind": "profile"
+    }
+  ],
+  "gateway_patterns": [
+    {
+      "substring": "telara-frozen",
+      "id": "frozen"
+    },
+    {
+      "substring": "telara-promoted",
+      "id": "promoted"
+    },
+    {
+      "substring": "claude-code",
+      "id": "claude"
+    },
+    {
+      "substring": "claude_code",
+      "id": "claude"
+    },
+    {
+      "substring": "claude-dev",
+      "id": "cline"
+    },
+    {
+      "substring": "claude",
+      "id": "claude"
+    },
+    {
+      "substring": "openai-codex",
+      "id": "codex"
+    },
+    {
+      "substring": "codex-cli",
+      "id": "codex"
+    },
+    {
+      "substring": "codex",
+      "id": "codex"
+    },
+    {
+      "substring": "roocode",
+      "id": "roo_code"
+    },
+    {
+      "substring": "roo-code",
+      "id": "roo_code"
+    },
+    {
+      "substring": "roo_code",
+      "id": "roo_code"
+    },
+    {
+      "substring": "cline",
+      "id": "cline"
+    },
+    {
+      "substring": "aider",
+      "id": "aider"
+    },
+    {
+      "substring": "block-goose",
+      "id": "goose"
+    },
+    {
+      "substring": "goose",
+      "id": "goose"
+    },
+    {
+      "substring": "langgraph",
+      "id": "langgraph"
+    },
+    {
+      "substring": "langchain",
+      "id": "langchain"
+    },
+    {
+      "substring": "crewai",
+      "id": "crewai"
+    },
+    {
+      "substring": "crew-ai",
+      "id": "crewai"
+    },
+    {
+      "substring": "autogen",
+      "id": "autogen"
+    },
+    {
+      "substring": "ag2",
+      "id": "autogen"
+    },
+    {
+      "substring": "llamaindex",
+      "id": "llamaindex"
+    },
+    {
+      "substring": "llama-index",
+      "id": "llamaindex"
+    },
+    {
+      "substring": "llama_index",
+      "id": "llamaindex"
+    },
+    {
+      "substring": "openai-agents",
+      "id": "openai_agents"
+    },
+    {
+      "substring": "openai_agents",
+      "id": "openai_agents"
+    },
+    {
+      "substring": "agents-sdk",
+      "id": "openai_agents"
+    },
+    {
+      "substring": "chatgpt",
+      "id": "chatgpt"
+    },
+    {
+      "substring": "openai",
+      "id": "openai_hosted"
+    },
+    {
+      "substring": "perplexity",
+      "id": "perplexity"
+    },
+    {
+      "substring": "microsoft 365",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "microsoft365",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "m365",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "copilot studio",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "copilot-studio",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "teams",
+      "id": "m365_copilot"
+    },
+    {
+      "substring": "gemini",
+      "id": "gemini"
+    },
+    {
+      "substring": "agentspace",
+      "id": "gemini"
+    },
+    {
+      "substring": "cursor",
+      "id": "cursor"
+    },
+    {
+      "substring": "windsurf",
+      "id": "windsurf"
+    },
+    {
+      "substring": "zed",
+      "id": "zed",
+      "match": "word"
+    },
+    {
+      "substring": "vscode",
+      "id": "vscode"
+    },
+    {
+      "substring": "vs-code",
+      "id": "vscode"
+    },
+    {
+      "substring": "visual studio code",
+      "id": "vscode"
+    },
+    {
+      "substring": "github.copilot",
+      "id": "github_copilot"
+    },
+    {
+      "substring": "github-copilot",
+      "id": "github_copilot"
+    },
+    {
+      "substring": "copilot",
+      "id": "github_copilot"
+    },
+    {
+      "substring": "continue",
+      "id": "continue"
+    }
+  ],
+  "frontend_only_patterns": [
+    {
+      "substring": "a2a",
+      "id": "a2a"
+    }
+  ]
+}

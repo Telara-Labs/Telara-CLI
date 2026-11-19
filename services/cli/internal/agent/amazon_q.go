@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const amazonQServersKey = "mcpServers"
@@ -19,7 +21,7 @@ func NewAmazonQWriter() AgentWriter {
 	return &amazonQWriter{homeDir: home}
 }
 
-func (w *amazonQWriter) Name() string { return "amazon-q" }
+func (w *amazonQWriter) Name() string { return clientidentity.AmazonQ }
 
 func (w *amazonQWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".aws", "amazonq")) ||

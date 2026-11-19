@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const geminiServersKey = "mcpServers"
@@ -19,7 +21,7 @@ func NewGeminiWriter() AgentWriter {
 	return &geminiWriter{homeDir: home}
 }
 
-func (w *geminiWriter) Name() string { return "gemini" }
+func (w *geminiWriter) Name() string { return clientidentity.Gemini }
 
 func (w *geminiWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".gemini")) || binaryInPath("gemini")

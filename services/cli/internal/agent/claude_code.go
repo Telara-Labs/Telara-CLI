@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const claudeServersKey = "mcpServers"
@@ -20,7 +22,7 @@ func NewClaudeCodeWriter() AgentWriter {
 	return &claudeCodeWriter{homeDir: home}
 }
 
-func (w *claudeCodeWriter) Name() string { return "claude-code" }
+func (w *claudeCodeWriter) Name() string { return clientidentity.ClaudeCode }
 
 func (w *claudeCodeWriter) Detect() bool {
 	return dirExists(filepath.Join(w.homeDir, ".claude")) || binaryInPath("claude")

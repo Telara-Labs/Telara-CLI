@@ -13,6 +13,8 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 	yaml "gopkg.in/yaml.v3"
+
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/clientidentity"
 )
 
 const (
@@ -32,13 +34,13 @@ const (
 	ScopeGlobalSharedSkills  = "global-shared-skills"
 	ScopeProjectSharedSkills = "project-shared-skills"
 
-	ClientClaudeCode = "claude-code"
-	ClientCursor     = "cursor"
-	ClientWindsurf   = "windsurf"
-	ClientVSCode     = "vscode"
-	ClientCodex      = "codex"
-	ClientGemini     = "gemini"
-	ClientAmazonQ    = "amazon-q"
+	ClientClaudeCode = clientidentity.ClaudeCode
+	ClientCursor     = clientidentity.Cursor
+	ClientWindsurf   = clientidentity.Windsurf
+	ClientVSCode     = clientidentity.VSCode
+	ClientCodex      = clientidentity.Codex
+	ClientGemini     = clientidentity.Gemini
+	ClientAmazonQ    = clientidentity.AmazonQ
 )
 
 type configFormat string
