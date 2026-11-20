@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/url"
+	"time"
 )
 
 // Blocklist is what a scan needs to enforce MCP server blocks (TENG-3921).
@@ -58,6 +59,30 @@ func (c *Client) RetireCollector(ctx context.Context, installationKey string) (b
 	}
 	err := c.do(ctx, "POST", "/v1/cli/ai-estate/collector/retire", map[string]string{"installation_key": installationKey}, &resp)
 	return resp.Retired, err
+}
+
+// ReceiverWait is one answer of the device receiver's held wait (TENG-3921).
+type ReceiverWait struct {
+	Version string `json:"version"`
+	Changed bool   `json:"changed"`
+}
+
+// RegisterEstateReceiver binds the client's DPoP key (Prover) to this device.
+func (c *Client) RegisterEstateReceiver(ctx context.Context, installationKey string) error {
+	return c.doProved(ctx, "POST", "/v1/cli/estate-receiver/register", map[string]string{"installation_key": installationKey}, nil)
+}
+
+// WaitEstateReceiver holds the receiver's outbound connection until what this
+// device enforces differs from version, or the server's hold ends. It uses a
+// client whose timeout outlasts the hold.
+func (c *Client) WaitEstateReceiver(ctx context.Context, installationKey, version string) (*ReceiverWait, error) {
+	long := *c
+	hc := *c.HTTPClient
+	hc.Timeout = 90 * time.Second
+	long.HTTPClient = &hc
+	var resp ReceiverWait
+	err := long.doProved(ctx, "GET", "/v1/cli/estate-receiver/wait?installation_key="+url.QueryEscape(installationKey)+"&version="+url.QueryEscape(version), nil, &resp)
+	return &resp, err
 }
 
 // MarkEscrowRestored closes an entry once it is back on the device.

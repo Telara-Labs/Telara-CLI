@@ -13,6 +13,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/auth"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 )
 
 var logoutCmd = &cobra.Command{
@@ -59,6 +60,9 @@ var logoutCmd = &cobra.Command{
 
 		// Snapshot + clean up MCP configs before deleting the token.
 		cleanupMCPConfigs(userID, tenantID)
+
+		// The receiver's key was revoked with the collector; stop its service.
+		_ = schedule.UninstallReceiver()
 
 		if err := auth.DeleteToken(prefs.APIURL); err != nil {
 			return fmt.Errorf("failed to remove local token: %w", err)
