@@ -8,13 +8,17 @@ import "context"
 // It reads GET /v1/cli/mcp-servers/blocked, which accepts the CLI token. The
 // dashboard route /v1/governance/settings accepts only a user JWT and refuses a
 // CLI token with 401, so a machine could never read the list from there.
-func (c *Client) MCPServerBlocklist(ctx context.Context) (string, bool, error) {
+//
+// managedOnly is the tenant's managed-devices-only setting: when true, a device
+// without a managed policy leaves its MCP client files alone.
+func (c *Client) MCPServerBlocklist(ctx context.Context) (value string, set bool, managedOnly bool, err error) {
 	var resp struct {
-		Blocklist string `json:"blocklist"`
-		Set       bool   `json:"set"`
+		Blocklist   string `json:"blocklist"`
+		Set         bool   `json:"set"`
+		ManagedOnly bool   `json:"managed_devices_only"`
 	}
 	if err := c.do(ctx, "GET", "/v1/cli/mcp-servers/blocked", nil, &resp); err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return resp.Blocklist, resp.Set, nil
+	return resp.Blocklist, resp.Set, resp.ManagedOnly, nil
 }

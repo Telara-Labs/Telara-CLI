@@ -73,3 +73,18 @@ func TestNoOrUnreadableManagedSettingsDeniesNothing(t *testing.T) {
 		t.Error("an unreadable file must deny nothing")
 	}
 }
+
+func TestManagedPolicyPresentOnlyWithAReadableFile(t *testing.T) {
+	withManagedSettings(t, "")
+	if LoadManagedMCPPolicy().Present() {
+		t.Error("no file is not a managed device")
+	}
+	withManagedSettings(t, `{}`)
+	if !LoadManagedMCPPolicy().Present() {
+		t.Error("a readable managed settings file makes a managed device")
+	}
+	withManagedSettings(t, "{oops")
+	if LoadManagedMCPPolicy().Present() {
+		t.Error("an unreadable file is not a managed device")
+	}
+}

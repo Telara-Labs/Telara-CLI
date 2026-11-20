@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/discovery"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/mcpquarantine"
 )
 
@@ -19,6 +20,9 @@ type mcpEnforcementReport struct {
 	Blocked  []string               `json:"blocked"`
 	Actions  []mcpquarantine.Action `json:"actions"`
 	Errors   []string               `json:"errors"`
+	// Skipped says why no MCP file was changed on purpose, e.g. the tenant
+	// acts only on managed devices and this one has no managed policy.
+	Skipped string `json:"skipped,omitempty"`
 }
 
 // enforceMCPBlocks takes servers the tenant blocked out of this user's MCP
@@ -35,7 +39,7 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 		rep.Errors = append(rep.Errors, msg)
 		fmt.Fprintf(os.Stderr, "WARNING: %s\n", msg)
 	}
-	value, _, err := api.NewClient(endpoint, token).MCPServerBlocklist(ctx)
+	value, _, managedOnly, err := api.NewClient(endpoint, token).MCPServerBlocklist(ctx)
 	if err != nil {
 		warn("could not fetch blocked MCP servers (%v); no MCP configuration was changed this run", err)
 		return rep
@@ -46,6 +50,14 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 		return rep
 	}
 	rep.Checked, rep.Complete, rep.Blocked = true, true, mcpquarantine.Names(blocked)
+	if managedOnly && !discovery.LoadManagedMCPPolicy().Present() {
+		// The gateway still refuses a blocked server on every governed call.
+		rep.Skipped = "your organization acts only on managed devices, and this device has no managed policy"
+		if !asJSON {
+			fmt.Fprintf(os.Stderr, "MCP client files left unchanged: %s\n", rep.Skipped)
+		}
+		return rep
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		warn("cannot resolve home directory; no MCP configuration was changed")

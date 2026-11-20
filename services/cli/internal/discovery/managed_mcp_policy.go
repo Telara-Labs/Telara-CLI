@@ -40,6 +40,7 @@ type managedMCPEntry struct {
 
 // ManagedMCPPolicy is the device's managed MCP policy, empty when none exists.
 type ManagedMCPPolicy struct {
+	present     bool
 	denied      []managedMCPEntry
 	allowed     []managedMCPEntry
 	allowedSet  bool
@@ -62,7 +63,7 @@ func LoadManagedMCPPolicy() ManagedMCPPolicy {
 		if json.Unmarshal(b, &doc) != nil {
 			return ManagedMCPPolicy{}
 		}
-		pol := ManagedMCPPolicy{denied: doc.Denied, allowedOnly: doc.AllowedOnly}
+		pol := ManagedMCPPolicy{present: true, denied: doc.Denied, allowedOnly: doc.AllowedOnly}
 		if doc.Allowed != nil {
 			pol.allowedSet, pol.allowed = true, *doc.Allowed
 		}
@@ -95,6 +96,10 @@ func managedCommandMatch(want []string, command string, args []string) bool {
 func (e managedMCPEntry) matches(rawURL, command string, args []string) bool {
 	return managedURLMatch(e.ServerURL, rawURL) || managedCommandMatch(e.ServerCommand, command, args)
 }
+
+// Present reports whether this device has a readable managed policy, which is
+// what makes it a managed device for managed-devices-only (TENG-3921).
+func (p ManagedMCPPolicy) Present() bool { return p.present }
 
 // Denies reports whether this device's managed policy keeps the server out.
 func (p ManagedMCPPolicy) Denies(name, rawURL, command string, args []string) bool {
