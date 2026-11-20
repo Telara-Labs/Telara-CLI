@@ -121,6 +121,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	var enforcement *enforcementReport
 	if !dryRun {
 		enforcement = enforceRemovals(endpoint, token, asJSON)
+		enforcement.MCP = enforceMCPBlocks(endpoint, token, asJSON)
 	}
 
 	// A wide terminal watches a radar while the machine is scanned. The
@@ -321,7 +322,7 @@ func enforceRemovals(endpoint, token string, asJSON bool) *enforcementReport {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	rep := &enforcementReport{Quarantined: []skillshare.QuarantineAction{}, Errors: []string{}}
+	rep := &enforcementReport{Quarantined: []skillshare.QuarantineAction{}, Reinstated: []skillshare.ReinstateAction{}, Errors: []string{}}
 	// Warnings go to stderr in every mode. With --json stdout carries the report,
 	// so stderr is free, and a machine caller reads the same facts in rep.
 	warn := func(format string, a ...interface{}) {
@@ -338,13 +339,31 @@ func enforceRemovals(endpoint, token string, asJSON bool) *enforcementReport {
 	}
 	rep.Checked = true
 	rep.Complete = true
-	if len(denied) == 0 {
-		return rep
-	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		warn("cannot resolve home directory; nothing was quarantined")
+		return rep
+	}
+
+	// A removal an administrator lifted comes back (TENG-3921). Only after the
+	// deny list was fetched: the early return above means a failed fetch never
+	// reads as "nothing is denied".
+	reinstated, rerr := skillshare.Reinstate(home, denied)
+	for _, a := range reinstated {
+		rep.Reinstated = append(rep.Reinstated, a)
+		if !asJSON {
+			if a.Kind == "reinstated" {
+				fmt.Fprintf(os.Stderr, "Reinstated skill %q (your administrator lifted its removal) -> %s\n", a.SkillName, a.To)
+			} else {
+				fmt.Fprintf(os.Stderr, "Skill %q was not reinstated: %s\n", a.SkillName, a.Note)
+			}
+		}
+	}
+	if rerr != nil {
+		warn("%v", rerr)
+	}
+	if len(denied) == 0 {
 		return rep
 	}
 
@@ -370,5 +389,8 @@ type enforcementReport struct {
 	Checked     bool                          `json:"checked"`
 	Complete    bool                          `json:"complete"`
 	Quarantined []skillshare.QuarantineAction `json:"quarantined"`
+	Reinstated  []skillshare.ReinstateAction  `json:"reinstated"`
 	Errors      []string                      `json:"errors"`
+	// MCP is the blocked MCP server enforcement (TENG-3921).
+	MCP *mcpEnforcementReport `json:"mcp,omitempty"`
 }

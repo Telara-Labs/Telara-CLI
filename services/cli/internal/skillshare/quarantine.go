@@ -229,6 +229,12 @@ func quarantineSkillDir(homeDir, root, from string, entry DeniedSkill) (*Quarant
 		return nil, fmt.Errorf("write removal note: %w", err)
 	}
 
+	// The origin record is what a reinstate reads (TENG-3921). Written after
+	// the note so a quarantine that has one is complete.
+	if err := writeOrigin(to, originRecord{SkillName: name, ContentHash: entry.ContentHash, From: from, Root: root, Retained: retained}); err != nil {
+		return nil, fmt.Errorf("write origin record: %w", err)
+	}
+
 	return &QuarantineAction{
 		SkillName: name, ContentHash: entry.ContentHash,
 		From: from, To: to, Reason: entry.Reason, Retained: retained,
