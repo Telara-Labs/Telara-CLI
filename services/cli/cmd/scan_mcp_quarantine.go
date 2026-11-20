@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/api"
@@ -39,7 +41,9 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 		rep.Errors = append(rep.Errors, msg)
 		fmt.Fprintf(os.Stderr, "WARNING: %s\n", msg)
 	}
-	value, _, managedOnly, err := api.NewClient(endpoint, token).MCPServerBlocklist(ctx)
+	client := api.NewClient(endpoint, token)
+	bl, err := client.MCPServerBlocklist(ctx)
+	value, managedOnly := bl.Value, bl.ManagedOnly
 	if err != nil {
 		warn("could not fetch blocked MCP servers (%v); no MCP configuration was changed this run", err)
 		return rep
@@ -80,5 +84,77 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 	if err != nil {
 		warn("%v", err)
 	}
+	escrowMCPEntries(ctx, client, home, blocked, bl.Escrow, rep, asJSON, warn)
 	return rep
+}
+
+// escrowMCPEntries keeps a credential-free copy of each entry this run took
+// offline (when the tenant's device escrow is on), closes the copy of each
+// entry put back from the local quarantine, and puts back from escrow an
+// unblocked entry whose local record is gone (TENG-3921). An entry restored from
+// escrow has no credentials: new ones must be issued.
+func escrowMCPEntries(ctx context.Context, client *api.Client, home string, blocked map[string]bool, escrowOn bool, rep *mcpEnforcementReport, asJSON bool, warn func(string, ...interface{})) {
+	device := installationKey()
+	if escrowOn {
+		for _, a := range rep.Actions {
+			if a.Kind != "quarantined" || a.Record == "" {
+				continue
+			}
+			rec, err := mcpquarantine.ReadRecord(a.Record)
+			if err != nil {
+				warn("escrow of %s skipped: %v", a.Server, err)
+				continue
+			}
+			entry, keys, err := mcpquarantine.StripEntry(rec.Entry)
+			if err != nil {
+				warn("escrow of %s skipped: %v", a.Server, err)
+				continue
+			}
+			if err := client.PutEscrow(ctx, api.EscrowEntry{Installation: device, Server: rec.Server, EntryKey: rec.Key, ClientID: rec.ClientID,
+				ItemsKey: rec.ItemsKey, EntryJSON: string(entry), StrippedKeys: keys}); err != nil {
+				warn("escrow of %s failed (the local copy is kept): %v", a.Server, err)
+			}
+		}
+	}
+	open, err := client.ListEscrow(ctx, device)
+	if err != nil {
+		warn("could not read this device's escrow: %v", err)
+		return
+	}
+	reinstated := map[string]bool{}
+	for _, a := range rep.Actions {
+		if a.Kind == "reinstated" {
+			reinstated[a.ClientID+"|"+a.Server] = true
+		}
+	}
+	for _, e := range open {
+		if blocked[e.Server] {
+			continue
+		}
+		if reinstated[e.ClientID+"|"+e.Server] {
+			if err := client.MarkEscrowRestored(ctx, e.EscrowID); err != nil {
+				warn("could not close the escrow copy of %s: %v", e.Server, err)
+			}
+			continue
+		}
+		if mcpquarantine.HasRecord(home, e.ClientID, e.EntryKey) {
+			continue // the local quarantine puts it back
+		}
+		act, err := mcpquarantine.RestoreFromEscrow(home, e.ClientID, e.ItemsKey, e.EntryKey, json.RawMessage(e.EntryJSON))
+		act.Server = e.Server
+		if err != nil {
+			warn("could not restore %s from escrow: %v", e.Server, err)
+			continue
+		}
+		if act.Kind == "reinstated_from_escrow" {
+			act.Note = "credentials were not kept; enter new ones for: " + strings.Join(e.StrippedKeys, ", ")
+			if err := client.MarkEscrowRestored(ctx, e.EscrowID); err != nil {
+				warn("restored %s but could not close its escrow copy: %v", e.Server, err)
+			}
+			if !asJSON {
+				fmt.Fprintf(os.Stderr, "Put MCP server %q back in %s from escrow; %s\n", e.Server, act.Path, act.Note)
+			}
+		}
+		rep.Actions = append(rep.Actions, act)
+	}
 }
