@@ -112,6 +112,9 @@ type ResourceAssertion struct {
 	HasExecutable       bool   `json:"hasExecutable,omitempty"`
 	// TapPrimitiveRef is set when the skill is an installed TAP primitive.
 	TapPrimitiveRef string `json:"tapPrimitiveRef,omitempty"`
+	// ManagedPolicyDenied: this device's managed MCP policy keeps the server
+	// out, so taking it off this device is enforced (TENG-3921).
+	ManagedPolicyDenied bool `json:"managedPolicyDenied,omitempty"`
 }
 
 // DiscoveryReport is the unit the collector submits. It is idempotent on
@@ -270,17 +273,18 @@ func BuildReport(
 				// Instance-level identity: the same logical server configured by
 				// two employees must remain two assertions, so the scope is part
 				// of the key rather than the server name alone.
-				SourceAssertionID: fmt.Sprintf("%s|%s", scopeKey, server.ServerName),
-				ProviderNamespace: result.ClientFamily,
-				ResourceKind:      ResourceKindMCPClientConfiguration,
-				ServerName:        server.ServerName,
-				Transport:         server.Transport,
-				EndpointHost:      server.EndpointHost,
-				EndpointIdentity:  server.EndpointIdentity,
-				CommandIdentity:   server.CommandIdentity,
-				ArgCount:          server.RawArgCount,
-				CredentialClass:   wireCredentialClass(server.CredentialClass),
-				CredentialKeyHint: server.CredentialHint,
+				SourceAssertionID:   fmt.Sprintf("%s|%s", scopeKey, server.ServerName),
+				ProviderNamespace:   result.ClientFamily,
+				ResourceKind:        ResourceKindMCPClientConfiguration,
+				ServerName:          server.ServerName,
+				Transport:           server.Transport,
+				EndpointHost:        server.EndpointHost,
+				EndpointIdentity:    server.EndpointIdentity,
+				CommandIdentity:     server.CommandIdentity,
+				ArgCount:            server.RawArgCount,
+				CredentialClass:     wireCredentialClass(server.CredentialClass),
+				CredentialKeyHint:   server.CredentialHint,
+				ManagedPolicyDenied: server.ManagedDenied,
 				// Default. A configuration we merely found is unmediated until
 				// something proves otherwise; ApplyManagedEndpoints upgrades the
 				// ones that point at Telara. Defaulting to UNKNOWN instead would

@@ -32,14 +32,22 @@ const (
 
 // DiscoveredServer describes one MCP server entry found in one config file.
 type DiscoveredServer struct {
-	ServerName      string          `json:"serverName"`
-	Transport       string          `json:"transport"`
-	EndpointHost       string          `json:"endpointHost,omitempty"`
-	EndpointIdentity   string          `json:"endpointIdentity,omitempty"`
-	CommandIdentity    string          `json:"commandIdentity,omitempty"`
-	RawArgCount     int             `json:"rawArgCount"`
-	CredentialClass CredentialClass `json:"credentialClass"`
-	CredentialHint  string          `json:"credentialHint,omitempty"`
+	ServerName       string          `json:"serverName"`
+	Transport        string          `json:"transport"`
+	EndpointHost     string          `json:"endpointHost,omitempty"`
+	EndpointIdentity string          `json:"endpointIdentity,omitempty"`
+	CommandIdentity  string          `json:"commandIdentity,omitempty"`
+	RawArgCount      int             `json:"rawArgCount"`
+	CredentialClass  CredentialClass `json:"credentialClass"`
+	CredentialHint   string          `json:"credentialHint,omitempty"`
+	// ManagedDenied: this device's managed MCP policy keeps the server out
+	// (TENG-3921). Set for Claude Code sources only.
+	ManagedDenied bool `json:"managedDenied,omitempty"`
+
+	// The raw entry, kept only to match managed policy; never reported.
+	rawURL     string
+	rawCommand string
+	rawArgs    []string
 }
 
 // ConfigScanResult describes scanning one client family and scope pair.

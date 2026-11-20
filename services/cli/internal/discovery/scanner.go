@@ -175,6 +175,13 @@ func scanCatalogSource(src catalogFileSource) ConfigScanResult {
 		}
 	}
 
+	if src.ClientID == ClientClaudeCode && len(result.Servers) > 0 {
+		policy := LoadManagedMCPPolicy()
+		for i := range result.Servers {
+			srv := &result.Servers[i]
+			srv.ManagedDenied = policy.Denies(srv.ServerName, srv.rawURL, srv.rawCommand, srv.rawArgs)
+		}
+	}
 	result.Status = ScanOK
 	return result
 }
@@ -529,6 +536,9 @@ func discoverServer(name string, entry map[string]interface{}) DiscoveredServer 
 		RawArgCount:     len(args),
 		CredentialClass: credentialClass,
 		CredentialHint:  credentialHint,
+		rawURL:          rawURL,
+		rawCommand:      command,
+		rawArgs:         args,
 	}
 	if rawURL != "" {
 		server.EndpointHost = NormalizeEndpointHost(rawURL)
