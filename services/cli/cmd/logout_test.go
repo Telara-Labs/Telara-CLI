@@ -16,6 +16,7 @@ type logoutGateway struct {
 	failRevoke  bool
 	tokenDelete int
 	keyDeletes  []string
+	retired     int
 	keysJSON    string
 	server      *httptest.Server
 }
@@ -36,6 +37,9 @@ func newLogoutGateway(t *testing.T, failRevoke bool) *logoutGateway {
 				return
 			}
 			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cli/ai-estate/collector/retire":
+			g.retired++
+			_, _ = w.Write([]byte(`{"retired":true}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs":
 			_, _ = w.Write([]byte(`{"configurations":[{"id":"cfg-1","name":"Personal"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cli/configs/cfg-1/keys":
@@ -92,6 +96,9 @@ func TestLogoutRevokesTheCachedMCPKeyAndTheToken(t *testing.T) {
 
 	if err := logoutCmd.RunE(logoutCmd, nil); err != nil {
 		t.Fatal(err)
+	}
+	if g.retired != 1 {
+		t.Fatalf("collector retire calls = %d, want 1 (TENG-3917)", g.retired)
 	}
 	if g.tokenDelete != 1 {
 		t.Fatalf("token revoke calls = %d, want 1", g.tokenDelete)

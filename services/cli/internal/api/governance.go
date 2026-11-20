@@ -50,6 +50,16 @@ func (c *Client) ListEscrow(ctx context.Context, installationKey string) ([]Escr
 	return resp.Entries, err
 }
 
+// RetireCollector retires this device's endpoint collector (TENG-3917), so an
+// uninstalled laptop is not reported as silent. The next scan reinstates it.
+func (c *Client) RetireCollector(ctx context.Context, installationKey string) (bool, error) {
+	var resp struct {
+		Retired bool `json:"retired"`
+	}
+	err := c.do(ctx, "POST", "/v1/cli/ai-estate/collector/retire", map[string]string{"installation_key": installationKey}, &resp)
+	return resp.Retired, err
+}
+
 // MarkEscrowRestored closes an entry once it is back on the device.
 func (c *Client) MarkEscrowRestored(ctx context.Context, id string) error {
 	return c.do(ctx, "POST", "/v1/cli/estate-escrow/"+url.PathEscape(id)+"/restored", map[string]string{}, nil)

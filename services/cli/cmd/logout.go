@@ -42,6 +42,14 @@ var logoutCmd = &cobra.Command{
 			return err
 		}
 
+		// Retire this device's collector while the token can still authorise
+		// it, so Telara does not report an uninstalled laptop as silent
+		// (TENG-3917). Its next scan, after a new login, reinstates it. A
+		// failure here must not keep the person logged in.
+		if _, err := client.RetireCollector(context.Background(), installationKey()); err != nil && !tokenRejected(err) {
+			fmt.Fprintf(os.Stderr, "Warning: Telara may report this device as silent until it is removed: %v\n", err)
+		}
+
 		if err := client.RevokeToken(context.Background()); err != nil {
 			if !tokenRejected(err) {
 				// Keep the local credential so the revoke can be retried.
