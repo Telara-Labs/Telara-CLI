@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added `telara receiver` (TENG-3921). It holds a signed wait on Telara and runs `telara scan` as soon as what this device must enforce changes, and at least every five minutes. It installs as a per-user launchd or systemd service, and `telara logout` removes it.
+- `telara scan` now reports MCP servers that this device's Claude Code managed policy denies (TENG-3921). It reads `managed-settings.json` (`deniedMcpServers`, `allowedMcpServers`, `allowManagedMcpServersOnly`) and matches a server by its URL or exact command, never by its name. An unreadable or missing file denies nothing.
+- When the tenant takes servers offline on managed devices only, a device with no readable managed policy now leaves its MCP client files alone and the scan says why (TENG-3921). Telara still refuses blocked servers.
+- With the tenant's device escrow on, `telara scan` also keeps each MCP entry it takes offline in Telara, with every env and header value, URL query and secret-looking argument emptied (TENG-3921). An entry whose local copy is gone comes back from escrow without credentials, and the scan names the ones to re-enter.
+- `telara logout` now retires this device's collector, so an uninstalled laptop is not reported as having stopped reporting (TENG-3917). A failure only warns.
 - `telara scan` now enforces the tenant's MCP server blocklist (TENG-3921). A server the tenant blocked is moved out of your MCP client files (Claude, Cursor and the other clients a scan discovers) into `~/.telara/quarantine/mcp`, readable by you only, and is put back, credentials included, on the first scan after the block is lifted. The scan report lists each server it moved or restored.
 - `telara scan` now puts back a skill an admin removed once the removal is lifted (TENG-3921). Quarantined skills record where they came from, so the next scan restores them to the same place. A skill that cannot be moved back, for example because something now sits at its old path, stays quarantined and is reported.
 - `telara handoff runner` now reports a claimed run while it sets up, and heartbeats at least every 30 seconds whatever `--heartbeat` says (TENG-3693 B14). Telara ends a claimed run it has not heard from for three minutes as abandoned, so a killed runner no longer leaves the work active, and a slow setup or a long `--heartbeat` no longer loses a live run.
