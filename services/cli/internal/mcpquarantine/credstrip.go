@@ -30,7 +30,11 @@ import (
 //
 // Where: the same user-level MCP client files the MCP quarantine edits
 // (discovery.QuarantinableMCPFiles), in each server's env, headers,
-// http_headers and args. Nothing else is read today.
+// http_headers and args, and in the query of every absolute URL among them and
+// among the entry's own string fields (credstrip_url.go). TOML, YAML and gcloud
+// files are edited in place (credstrip_spans.go, credstrip_yaml.go). A file or
+// value the strip cannot read or edit byte for byte is never skipped quietly:
+// it is reported as credential_unhandled and its binding is not done.
 //
 // Matching never guesses. A value is taken out when
 //   - its SHA-256 equals a listed token_sha256 (the whole value, the part after
@@ -118,40 +122,64 @@ func CredentialRoot(homeDir string) string {
 // CredentialRecord is one credential taken out of one place. Original is the
 // exact string that was there; Placeholder is what was written instead.
 type CredentialRecord struct {
-	ID            string          `json:"id"`
-	Client        string          `json:"client"` // MCP client, e.g. claude_code
-	Path          string          `json:"path"`
-	ItemsKey      string          `json:"items_key"`
-	Server        string          `json:"server"` // the server entry's key
-	Field         string          `json:"field"`  // env | headers | http_headers | args
-	Name          string          `json:"name,omitempty"`
-	Index         int             `json:"index"`
+	ID       string `json:"id"`
+	Client   string `json:"client"` // MCP client, e.g. claude_code
+	Path     string `json:"path"`
+	ItemsKey string `json:"items_key"`
+	Server   string `json:"server"` // the server entry's key
+	Field    string `json:"field"`  // env | headers | http_headers | args | a URL field such as url
+	Name     string `json:"name,omitempty"`
+	Index    int    `json:"index"`
+	// Param names the URL query parameter taken out of the value at Field,
+	// Name, Index; ParamN is its occurrence when the name repeats. Original is
+	// then the decoded parameter value and OriginalRaw its exact encoded bytes.
+	Param         string          `json:"param,omitempty"`
+	ParamN        int             `json:"param_n,omitempty"`
 	Matched       CredentialStrip `json:"matched"`
 	Original      string          `json:"original"`
 	Placeholder   string          `json:"placeholder"`
 	QuarantinedAt time.Time       `json:"quarantined_at"`
 	// Format is how the file is edited: empty for a JSON MCP file (the
-	// servers object is re-encoded), "toml" or "adc" for an in-place edit of
+	// servers object is re-encoded), "toml", "yaml" or "adc" for an in-place edit of
 	// the value's own bytes. OriginalRaw is then those exact bytes, quotes and
 	// escapes included, so a restore is byte-identical.
 	Format      string `json:"format,omitempty"`
 	OriginalRaw string `json:"original_raw,omitempty"`
+	// IDField is how a YAML file names its server entries: "_key" for a
+	// mapping keyed by name, else the entry field that holds the name.
+	IDField string `json:"id_field,omitempty"`
 }
 
 // Location names where the value sits, without the value.
-func (r CredentialRecord) Location() string { return location{r.Field, r.Name, r.Index}.String() }
+func (r CredentialRecord) Location() string {
+	return location{Field: r.Field, Name: r.Name, Index: r.Index, Param: r.Param, ParamN: r.ParamN}.String()
+}
 
 type location struct {
-	Field string
-	Name  string
-	Index int
+	Field  string
+	Name   string
+	Index  int
+	Param  string // a URL query parameter of the value at Field/Name/Index
+	ParamN int
 }
 
 func (l location) String() string {
-	if l.Field == "args" {
-		return fmt.Sprintf("args[%d]", l.Index)
+	var base string
+	switch {
+	case l.Field == "args":
+		base = fmt.Sprintf("args[%d]", l.Index)
+	case l.Name == "":
+		base = l.Field // one of the server entry's own fields, e.g. url
+	default:
+		base = l.Field + "." + l.Name
 	}
-	return l.Field + "." + l.Name
+	if l.Param == "" {
+		return base
+	}
+	if l.ParamN > 0 {
+		return fmt.Sprintf("%s?%s[%d]", base, l.Param, l.ParamN)
+	}
+	return base + "?" + l.Param
 }
 
 type candidate struct {
@@ -159,6 +187,14 @@ type candidate struct {
 	value string
 	// secretNamed is true when the value sits under a secret-named key.
 	secretNamed bool
+	// parentRef is 1 + the index of the URL candidate this is a query
+	// parameter of (0 when it is not one); sub is the parameter value's byte
+	// range in that URL.
+	parentRef int
+	sub       [2]int
+	// unhandled says why the value cannot be edited byte for byte. A match on
+	// such a value is refused, never skipped.
+	unhandled string
 }
 
 var credentialMapFields = []string{"env", "headers", "http_headers"}
@@ -182,7 +218,7 @@ func entryCandidates(entry *object) []candidate {
 			if json.Unmarshal(v, &s) != nil {
 				continue
 			}
-			out = append(out, candidate{loc: location{Field: field, Name: k, Index: -1}, value: s, secretNamed: secretWord.MatchString(k)})
+			out = appendWithParams(out, candidate{loc: location{Field: field, Name: k, Index: -1}, value: s, secretNamed: secretWord.MatchString(k)})
 		}
 	}
 	if raw, ok := entry.get("args"); ok {
@@ -195,18 +231,34 @@ func entryCandidates(entry *object) []candidate {
 					prev = ""
 					continue
 				}
-				named := false
-				if k, _, found := strings.Cut(s, "="); found && secretWord.MatchString(k) {
-					named = true
-				} else if strings.HasPrefix(prev, "-") && !strings.Contains(prev, "=") && secretWord.MatchString(prev) {
-					named = true
-				}
-				out = append(out, candidate{loc: location{Field: "args", Index: i}, value: s, secretNamed: named})
+				out = appendWithParams(out, candidate{loc: location{Field: "args", Index: i}, value: s, secretNamed: argSecretNamed(s, prev)})
 				prev = s
 			}
 		}
 	}
+	// The entry's own string fields that are URLs with a query (url, uri,
+	// serverUrl, httpUrl...): every field is looked at, none is named here.
+	for _, k := range entry.keys() {
+		if k == "args" || isCredentialMapField(k) {
+			continue
+		}
+		raw, _ := entry.get(k)
+		var s string
+		if json.Unmarshal(raw, &s) != nil || len(queryParams(s)) == 0 {
+			continue
+		}
+		out = appendWithParams(out, candidate{loc: location{Field: k, Index: -1}, value: s})
+	}
 	return out
+}
+
+func isCredentialMapField(k string) bool {
+	for _, f := range credentialMapFields {
+		if f == k {
+			return true
+		}
+	}
+	return false
 }
 
 // namesClient reports whether a value is the client id, alone or as the VALUE
@@ -297,12 +349,37 @@ func matchCandidates(cands []candidate, strips []CredentialStrip) map[int]Creden
 			}
 		}
 	}
+	// A URL taken out whole takes its query with it.
+	for i, c := range cands {
+		if c.parentRef == 0 {
+			continue
+		}
+		if _, whole := out[c.parentRef-1]; whole {
+			delete(out, i)
+		}
+	}
 	return out
 }
 
-// setCandidate writes s at loc in the entry.
-func setCandidate(entry *object, loc location, s string) error {
+// setCandidate writes s at c's place in the entry. For a query parameter, s is
+// the parameter value's raw (encoded) bytes and the rest of the URL is kept.
+func setCandidate(entry *object, cands []candidate, c candidate, s string) error {
+	if c.parentRef > 0 {
+		p := cands[c.parentRef-1]
+		if c.sub[0] < 0 || c.sub[1] > len(p.value) || c.sub[0] > c.sub[1] {
+			return fmt.Errorf("%s is not there", c.loc)
+		}
+		return setCandidate(entry, cands, p, p.value[:c.sub[0]]+s+p.value[c.sub[1]:])
+	}
+	loc := c.loc
 	val, _ := json.Marshal(s)
+	if loc.Field != "args" && !isCredentialMapField(loc.Field) {
+		if _, ok := entry.get(loc.Field); !ok {
+			return fmt.Errorf("%s is not there", loc)
+		}
+		entry.set(loc.Field, val)
+		return nil
+	}
 	if loc.Field == "args" {
 		raw, _ := entry.get("args")
 		var args []json.RawMessage
@@ -367,6 +444,14 @@ func SyncCredentials(homeDir string, strips []CredentialStrip, now time.Time) ([
 				errs = append(errs, err)
 			}
 		}
+		for _, f := range discovery.UnreadCredentialFiles(homeDir) {
+			if _, err := os.Stat(f.Path); err == nil {
+				actions = append(actions, Action{ClientID: f.ClientID, Path: f.Path, Kind: "credential_unhandled",
+					Note: "this file holds credentials in a shape no credential strip reads; it was not checked and was left unchanged"})
+			} else if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("stat %s: %w", f.Path, err))
+			}
+		}
 	}
 	a, err := restoreCredentials(homeDir, strips)
 	actions = append(actions, a...)
@@ -384,26 +469,36 @@ func stripFile(homeDir string, f discovery.MCPConfigFile, strips []CredentialStr
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", f.Path, err)
 	}
+	unhandled := func(server, note string) []Action {
+		return []Action{{Server: server, ClientID: f.ClientID, Path: f.Path, Kind: "credential_unhandled", Note: note}}
+	}
 	doc, err := parseObject(data)
 	if err != nil {
-		return nil, nil // not a JSON object: discovery reports it, nothing to strip
+		return unhandled("", "the file is not a JSON object ("+err.Error()+"); no credential in it was checked, and it was left unchanged"), nil
 	}
 	itemsRaw, ok := doc.get(f.ItemsKey)
-	if !ok {
-		return nil, nil
+	if !ok || string(bytes.TrimSpace(itemsRaw)) == "null" {
+		return nil, nil // read whole: the file has no servers
 	}
 	items, err := parseObject(itemsRaw)
 	if err != nil {
-		return nil, nil
+		return unhandled("", f.ItemsKey+" is not an object; no credential in it was checked, and the file was left unchanged"), nil
+	}
+	var refused []Action
+	for _, key := range items.keys() {
+		raw, _ := items.get(key)
+		if _, err := parseObject(raw); err != nil {
+			refused = append(refused, unhandled(key, "the server entry is not an object; no credential in it was checked, and the file was left unchanged")...)
+		}
+	}
+	if len(refused) > 0 {
+		return refused, nil
 	}
 	var actions []Action
 	changed := false
 	for _, key := range items.keys() {
 		raw, _ := items.get(key)
-		entry, err := parseObject(raw)
-		if err != nil {
-			continue
-		}
+		entry, _ := parseObject(raw)
 		cands := entryCandidates(entry)
 		matches := matchCandidates(cands, strips)
 		if len(matches) == 0 {
@@ -417,14 +512,24 @@ func stripFile(homeDir string, f discovery.MCPConfigFile, strips []CredentialStr
 		for _, i := range idx {
 			c := cands[i]
 			rec := CredentialRecord{Client: f.ClientID, Path: f.Path, ItemsKey: f.ItemsKey, Server: key, Field: c.loc.Field, Name: c.loc.Name,
-				Index: c.loc.Index, Matched: matches[i], Original: c.value, QuarantinedAt: now.UTC()}
+				Index: c.loc.Index, Param: c.loc.Param, ParamN: c.loc.ParamN, Matched: matches[i], Original: c.value, QuarantinedAt: now.UTC()}
+			if c.parentRef > 0 {
+				rec.OriginalRaw = cands[c.parentRef-1].value[c.sub[0]:c.sub[1]]
+			}
 			rec.ID = credentialRecordID(rec)
 			rec.Placeholder = placeholderFor(c, rec.ID)
 			recPath, err := writeCredentialRecord(homeDir, rec)
 			if err != nil {
 				return actions, err
 			}
-			if err := setCandidate(entry, c.loc, rec.Placeholder); err != nil {
+			// An earlier edit in this entry may have moved this value's bytes:
+			// place it again from the entry as it now is.
+			fresh := entryCandidates(entry)
+			at := indexOfLocation(fresh, rec.Location())
+			if at < 0 || fresh[at].value != c.value {
+				return actions, fmt.Errorf("%s %s: %s moved while it was being taken out", f.Path, key, rec.Location())
+			}
+			if err := setCandidate(entry, fresh, fresh[at], rec.Placeholder); err != nil {
 				return actions, fmt.Errorf("%s %s: %w", f.Path, key, err)
 			}
 			changed = true
@@ -442,6 +547,19 @@ func stripFile(homeDir string, f discovery.MCPConfigFile, strips []CredentialStr
 	}
 	return actions, nil
 }
+
+// indexOfLocation finds a candidate by its location, which is unique within
+// one server entry.
+func indexOfLocation[T interface{ locString() string }](cands []T, loc string) int {
+	for i, c := range cands {
+		if c.locString() == loc {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c candidate) locString() string { return c.loc.String() }
 
 func credentialRecordID(r CredentialRecord) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{r.Path, r.ItemsKey, r.Server, r.Location(), r.Original}, "\x00")))
@@ -571,7 +689,11 @@ func restoreOne(rec CredentialRecord, recPath string, strips []CredentialStrip) 
 	case rec.Original:
 		// A rewrite failed after the record was written: nothing to put back.
 	case rec.Placeholder:
-		if err := setCandidate(entry, cands[at].loc, rec.Original); err != nil {
+		put := rec.Original
+		if rec.Param != "" {
+			put = rec.OriginalRaw
+		}
+		if err := setCandidate(entry, cands, cands[at], put); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", rec.Path, rec.Server, err)
 		}
 		items.set(rec.Server, entry.compact())

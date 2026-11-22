@@ -581,8 +581,8 @@ func TestCLIRegistryIsLocalAndExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fileSources: %v", err)
 	}
-	if len(sources) != 20 {
-		t.Fatalf("CLI registry has %d sources, want 20", len(sources))
+	if len(sources) != 21 {
+		t.Fatalf("CLI registry has %d sources, want 21", len(sources))
 	}
 	for _, s := range sources {
 		if s.IntegrationName == "" || s.ClientID == "" || s.Scope == "" || len(s.ConfigPaths) == 0 || len(s.Resources) == 0 {

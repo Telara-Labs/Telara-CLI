@@ -41,6 +41,9 @@ const (
 	ClientCodex      = clientidentity.Codex
 	ClientGemini     = clientidentity.Gemini
 	ClientAmazonQ    = clientidentity.AmazonQ
+	// ClientGoose is the client registry's "goose" identity, which has no
+	// generated CLI constant.
+	ClientGoose = "goose"
 )
 
 type configFormat string
@@ -521,13 +524,27 @@ func parseConfig(data []byte, format configFormat) (map[string]interface{}, erro
 
 func discoverServer(name string, entry map[string]interface{}) DiscoveredServer {
 	command := stringValue(entry, "command")
+	if command == "" {
+		command = stringValue(entry, "cmd") // Goose
+	}
 	args := stringSliceValue(entry, "args")
 	rawURL := stringValue(entry, "url")
+	if rawURL == "" {
+		rawURL = stringValue(entry, "uri") // Goose
+	}
 	headers := stringMapValue(entry, "headers")
 	for key, value := range stringMapValue(entry, "http_headers") {
 		headers[key] = value
 	}
+	if opts, ok := mapValue(entry, "requestOptions"); ok { // Continue
+		for key, value := range stringMapValue(opts, "headers") {
+			headers[key] = value
+		}
+	}
 	env := stringMapValue(entry, "env")
+	for key, value := range stringMapValue(entry, "envs") { // Goose
+		env[key] = value
+	}
 	credentialClass, credentialHint := ClassifyCredential(headers, env)
 
 	server := DiscoveredServer{
@@ -554,7 +571,7 @@ func normalizeTransport(rawType, command, rawURL string) string {
 	switch strings.ToLower(strings.TrimSpace(rawType)) {
 	case TransportStdio:
 		return TransportStdio
-	case TransportHTTP, "streamable-http":
+	case TransportHTTP, "streamable-http", "streamable_http":
 		return TransportHTTP
 	case TransportSSE:
 		return TransportSSE

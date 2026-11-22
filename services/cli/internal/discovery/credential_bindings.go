@@ -25,6 +25,10 @@ const CredentialBindingScope = "local_credentials:global"
 const (
 	CredentialStatePresent     = "present"
 	CredentialStateQuarantined = "quarantined"
+	// CredentialStateUnhandled is a credential a strip would take out but
+	// cannot edit byte for byte (a YAML block scalar, an alias, an escaped
+	// URL). It is still in the file, so it never counts as done.
+	CredentialStateUnhandled = "unhandled"
 )
 
 // CredentialBinding is one OAuth client's credential at one place.
@@ -32,7 +36,7 @@ type CredentialBinding struct {
 	Client        string   // MCP client id (claude-code, openai-codex) or gcloud
 	Server        string   // server entry key; empty for a gcloud file
 	OAuthClientID string   // the OAuth client the credential belongs to
-	State         string   // present | quarantined
+	State         string   // present | quarantined | unhandled
 	Locations     []string // key names only, e.g. env.GOOGLE_REFRESH_TOKEN
 }
 
@@ -49,8 +53,16 @@ func AppendCredentialBindings(report *DiscoveryReport, bindings []CredentialBind
 	if complete {
 		for _, b := range bindings {
 			class := WireCredentialInline
-			if b.State != CredentialStatePresent {
+			if b.State == CredentialStateQuarantined {
 				class = WireCredentialNone
+			}
+			// The gateway accepts present and quarantined only
+			// (telara-middleware ai_estate_endpoints.go). An unhandled
+			// credential is still in the file, so it travels as present,
+			// which knowledge's fan-out never counts as done.
+			state := b.State
+			if state == CredentialStateUnhandled {
+				state = CredentialStatePresent
 			}
 			locations := append([]string(nil), b.Locations...)
 			sort.Strings(locations)
@@ -66,7 +78,7 @@ func AppendCredentialBindings(report *DiscoveryReport, bindings []CredentialBind
 				ControlState:      WireControlDiscoveredUnmediated,
 				ObservedAt:        observedAt,
 				OAuthClientID:     b.OAuthClientID,
-				CredentialState:   b.State,
+				CredentialState:   state,
 			})
 		}
 	}

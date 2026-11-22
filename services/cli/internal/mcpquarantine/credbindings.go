@@ -19,7 +19,9 @@ import (
 // the tenant's strip list, when it has the shape of a Google OAuth client id,
 // or when it is the client_id of a gcloud authorized_user file. Present means a
 // client-wide strip of that client would take something out, by the same rules
-// a strip uses. No value is reported, only key names.
+// a strip uses. Unhandled means it would, but at least one of those values
+// cannot be edited byte for byte, so a strip refuses and the credential stays:
+// it never counts as done. No value is reported, only key names.
 
 var googleClientIDShape = regexp.MustCompile(`^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$`)
 
@@ -54,11 +56,16 @@ func entryBindings(client, server string, cands []candidate, strips []Credential
 	var out []discovery.CredentialBinding
 	for _, id := range clientIDsIn(cands, strips, adc) {
 		b := discovery.CredentialBinding{Client: client, Server: server, OAuthClientID: id}
+		unhandled := false
 		for i := range matchCandidates(cands, []CredentialStrip{{ClientID: id}}) {
 			b.Locations = append(b.Locations, cands[i].loc.String())
+			unhandled = unhandled || cands[i].unhandled != ""
 		}
 		if len(b.Locations) > 0 {
 			b.State = discovery.CredentialStatePresent
+			if unhandled {
+				b.State = discovery.CredentialStateUnhandled
+			}
 		} else {
 			for _, c := range cands {
 				if strings.Contains(c.value, discovery.QuarantinedCredentialPrefix) {
@@ -104,17 +111,19 @@ func CredentialBindings(homeDir string, strips []CredentialStrip) ([]discovery.C
 			continue
 		}
 		raw, ok := doc.get(f.ItemsKey)
-		if !ok {
+		if !ok || strings.TrimSpace(string(raw)) == "null" {
 			continue
 		}
 		items, err := parseObject(raw)
 		if err != nil {
+			complete = false // servers that are not an object were not read
 			continue
 		}
 		for _, key := range items.keys() {
 			v, _ := items.get(key)
 			entry, err := parseObject(v)
 			if err != nil {
+				complete = false
 				continue
 			}
 			out = append(out, entryBindings(f.ClientID, key, entryCandidates(entry), strips, false)...)
@@ -125,13 +134,20 @@ func CredentialBindings(homeDir string, strips []CredentialStrip) ([]discovery.C
 		if !ok {
 			continue
 		}
-		doc, err := parseSpans(t.Format, data, t.ItemsKey)
+		doc, err := parseSpans(t, data)
 		if err != nil {
 			complete = false
 			continue
 		}
 		for _, server := range doc.order {
 			out = append(out, entryBindings(t.Client, server, doc.plain(server), strips, t.Format == formatADC)...)
+		}
+	}
+	// A file known to hold credentials in a shape no strip reads keeps the
+	// scope incomplete while it exists.
+	for _, f := range discovery.UnreadCredentialFiles(homeDir) {
+		if _, ok := read(f.Path); ok {
+			complete = false
 		}
 	}
 	return out, complete

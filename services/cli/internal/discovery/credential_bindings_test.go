@@ -48,3 +48,15 @@ func TestAppendCredentialBindings(t *testing.T) {
 		t.Fatal("an incomplete read must report a failed scope and no assertions, so nothing is withdrawn")
 	}
 }
+
+// An unhandled credential is still in the file: it travels as present (the
+// only not-done state the gateway accepts), never as quarantined.
+func TestUnhandledBindingTravelsAsPresent(t *testing.T) {
+	const cid = "123456789-abcdef.apps.googleusercontent.com"
+	var r DiscoveryReport
+	AppendCredentialBindings(&r, []CredentialBinding{{Client: ClientGoose, Server: "gdrive", OAuthClientID: cid, State: CredentialStateUnhandled,
+		Locations: []string{"envs.GOOGLE_REFRESH_TOKEN"}}}, true, "2026-11-21T09:00:00Z")
+	if len(r.ResourceAssertions) != 1 || r.ResourceAssertions[0].CredentialState != CredentialStatePresent || r.ResourceAssertions[0].CredentialClass != WireCredentialInline {
+		t.Fatalf("got %+v", r.ResourceAssertions)
+	}
+}

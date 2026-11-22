@@ -17,13 +17,14 @@ import (
 )
 
 // Credential strips in files edited in place (TENG-3921): TOML MCP client
-// files (Codex ~/.codex/config.toml) and gcloud application default
-// credentials. Only the bytes of the value taken out change; every other byte
+// files (Codex ~/.codex/config.toml), YAML MCP client files (Goose, Continue;
+// credstrip_yaml.go) and gcloud application default credentials. Only the bytes of the value taken out change; every other byte
 // of the file, comments and layout included, stays as it was. A record keeps
 // the value's exact source bytes, so a restore is byte-identical.
 
 const (
 	formatTOML = "toml"
+	formatYAML = "yaml"
 	formatADC  = "adc"
 )
 
@@ -32,12 +33,16 @@ type spanTarget struct {
 	Client   string
 	Path     string
 	ItemsKey string
+	IDField  string // YAML: "_key" for servers keyed by name, else the entry field naming it
 }
 
 func spanTargets(homeDir string) []spanTarget {
 	var out []spanTarget
 	for _, f := range discovery.CredentialTOMLFiles(homeDir) {
 		out = append(out, spanTarget{Format: formatTOML, Client: f.ClientID, Path: f.Path, ItemsKey: f.ItemsKey})
+	}
+	for _, f := range discovery.CredentialYAMLFiles(homeDir) {
+		out = append(out, spanTarget{Format: formatYAML, Client: f.ClientID, Path: f.Path, ItemsKey: f.ItemsKey, IDField: f.IDField})
 	}
 	for _, p := range discovery.GoogleADCFiles(homeDir) {
 		out = append(out, spanTarget{Format: formatADC, Client: discovery.GoogleADCClient, Path: p})
@@ -49,7 +54,12 @@ func spanTargets(homeDir string) []spanTarget {
 type spanCandidate struct {
 	candidate
 	start, end int
+	// raw is true for a URL query parameter: the placeholder is written as
+	// bare bytes inside the string, not as a quoted string of its own.
+	raw bool
 }
+
+func (c spanCandidate) locString() string { return c.loc.String() }
 
 // spanEntries are a file's candidates per server entry ("" for gcloud).
 type spanEntries struct {
@@ -75,14 +85,16 @@ func (e *spanEntries) plain(server string) []candidate {
 	return out
 }
 
-func parseSpans(format string, data []byte, itemsKey string) (*spanEntries, error) {
-	switch format {
+func parseSpans(t spanTarget, data []byte) (*spanEntries, error) {
+	switch t.Format {
 	case formatTOML:
-		return tomlSpans(data, itemsKey)
+		return tomlSpans(data, t.ItemsKey)
+	case formatYAML:
+		return yamlSpans(data, t.ItemsKey, t.IDField)
 	case formatADC:
 		return adcSpans(data)
 	}
-	return nil, fmt.Errorf("unknown credential file format %q", format)
+	return nil, fmt.Errorf("unknown credential file format %q", t.Format)
 }
 
 // tomlSpans walks every key/value of the document and keeps the string values
@@ -112,6 +124,7 @@ func tomlSpans(data []byte, itemsKey string) (*spanEntries, error) {
 		start := int(n.Raw.Offset)
 		c := spanCandidate{start: start, end: start + int(n.Raw.Length)}
 		c.value = string(n.Data)
+		inner := quotedInner(string(data[c.start:c.end]), c.value)
 		switch {
 		case index >= 0 && len(rest) == 1 && rest[0] == "args":
 			c.loc = location{Field: "args", Index: index}
@@ -122,7 +135,11 @@ func tomlSpans(data []byte, itemsKey string) (*spanEntries, error) {
 		case index < 0 && len(rest) == 2 && (rest[0] == "env" || rest[0] == "headers" || rest[0] == "http_headers"):
 			c.loc = location{Field: rest[0], Name: rest[1], Index: -1}
 			c.secretNamed = secretWord.MatchString(rest[1])
-			out.add(server, c)
+			out.addWithParams(server, c, inner, escapedURLReason)
+		case index < 0 && len(rest) == 1 && rest[0] != "args" && !isCredentialMapField(rest[0]) && len(queryParams(c.value)) > 0:
+			// One of the entry's own fields holding a URL with a query.
+			c.loc = location{Field: rest[0], Index: -1}
+			out.addWithParams(server, c, inner, escapedURLReason)
 		}
 	}
 	var walk func(path []string, v *unstable.Node)
@@ -168,12 +185,8 @@ func tomlSpans(data []byte, itemsKey string) (*spanEntries, error) {
 	for _, server := range argOrder {
 		prev := ""
 		for _, c := range args[server] {
-			if k, _, found := strings.Cut(c.value, "="); found && secretWord.MatchString(k) {
-				c.secretNamed = true
-			} else if strings.HasPrefix(prev, "-") && !strings.Contains(prev, "=") && secretWord.MatchString(prev) {
-				c.secretNamed = true
-			}
-			out.add(server, c)
+			c.secretNamed = argSecretNamed(c.value, prev)
+			out.addWithParams(server, c, quotedInner(string(data[c.start:c.end]), c.value), escapedURLReason)
 			prev = c.value
 		}
 	}
@@ -281,9 +294,28 @@ func stripSpanFile(homeDir string, t spanTarget, strips []CredentialStrip, now t
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", t.Path, err)
 	}
-	doc, err := parseSpans(t.Format, data, t.ItemsKey)
+	doc, err := parseSpans(t, data)
 	if err != nil {
-		return nil, nil // unparseable: nothing can be placed safely, nothing is changed
+		return []Action{{ClientID: t.Client, Path: t.Path, Kind: "credential_unhandled",
+			Note: "the file does not parse (" + err.Error() + "); no credential in it was checked, and it was left unchanged"}}, nil
+	}
+	// A match on a value that cannot be edited byte for byte is refused, and
+	// then nothing in the file is edited.
+	var refused []Action
+	for _, server := range doc.order {
+		spans := doc.entries[server]
+		for i := range matchCandidates(doc.plain(server), strips) {
+			if why := spans[i].unhandled; why != "" {
+				refused = append(refused, Action{Server: server, ClientID: t.Client, Path: t.Path, Kind: "credential_unhandled",
+					Note: spans[i].loc.String() + ": " + why + "; the file was left unchanged"})
+			}
+		}
+	}
+	if len(refused) > 0 {
+		sort.Slice(refused, func(i, j int) bool {
+			return refused[i].Server+"\x00"+refused[i].Note < refused[j].Server+"\x00"+refused[j].Note
+		})
+		return refused, nil
 	}
 	var actions []Action
 	var edits []spanEdit
@@ -298,14 +330,19 @@ func stripSpanFile(homeDir string, t spanTarget, strips []CredentialStrip, now t
 		for _, i := range idx {
 			c := spans[i]
 			rec := CredentialRecord{Client: t.Client, Path: t.Path, ItemsKey: t.ItemsKey, Server: server, Field: c.loc.Field, Name: c.loc.Name,
-				Index: c.loc.Index, Matched: matches[i], Original: c.value, QuarantinedAt: now.UTC(), Format: t.Format, OriginalRaw: string(data[c.start:c.end])}
+				Index: c.loc.Index, Param: c.loc.Param, ParamN: c.loc.ParamN, Matched: matches[i], Original: c.value, QuarantinedAt: now.UTC(),
+				Format: t.Format, OriginalRaw: string(data[c.start:c.end]), IDField: t.IDField}
 			rec.ID = credentialRecordID(rec)
 			rec.Placeholder = placeholderFor(c.candidate, rec.ID)
 			recPath, err := writeCredentialRecord(homeDir, rec)
 			if err != nil {
 				return actions, err
 			}
-			edits = append(edits, spanEdit{start: c.start, end: c.end, with: encodeSpanValue(t.Format, rec.Placeholder)})
+			with := encodeSpanValue(t.Format, rec.Placeholder)
+			if c.raw {
+				with = []byte(rec.Placeholder)
+			}
+			edits = append(edits, spanEdit{start: c.start, end: c.end, with: with})
 			actions = append(actions, Action{Server: server, ClientID: t.Client, Path: t.Path, Kind: "credential_quarantined", Record: recPath,
 				Note: rec.Location() + " (" + rec.Matched.String() + ")"})
 		}
@@ -332,7 +369,7 @@ func restoreSpan(rec CredentialRecord, recPath string, strips []CredentialStrip)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", rec.Path, err)
 	}
-	doc, err := parseSpans(rec.Format, data, rec.ItemsKey)
+	doc, err := parseSpans(spanTargetOf(rec), data)
 	if err != nil {
 		return conflict("the file no longer parses")
 	}
@@ -340,13 +377,7 @@ func restoreSpan(rec CredentialRecord, recPath string, strips []CredentialStrip)
 	if !ok {
 		return conflict("the server entry is gone")
 	}
-	at := -1
-	for i, c := range spans {
-		if c.loc.String() == rec.Location() {
-			at = i
-			break
-		}
-	}
+	at := indexOfLocation(spans, rec.Location())
 	if at < 0 {
 		return conflict("the value is gone")
 	}
@@ -359,6 +390,9 @@ func restoreSpan(rec CredentialRecord, recPath string, strips []CredentialStrip)
 	case rec.Original:
 		// A rewrite failed after the record was written: nothing to put back.
 	case rec.Placeholder:
+		if why := spans[at].unhandled; why != "" {
+			return conflict("the placeholder can no longer be edited in place (" + why + ")")
+		}
 		edited := applySpanEdits(data, []spanEdit{{start: spans[at].start, end: spans[at].end, with: []byte(rec.OriginalRaw)}})
 		if err := writeFileAtomic(rec.Path, edited); err != nil {
 			return nil, fmt.Errorf("rewrite %s: %w", rec.Path, err)
@@ -371,4 +405,9 @@ func restoreSpan(rec CredentialRecord, recPath string, strips []CredentialStrip)
 	}
 	act.Kind, act.Note = "credential_restored", rec.Location()
 	return act, nil
+}
+
+// spanTargetOf is the target a record was taken from.
+func spanTargetOf(rec CredentialRecord) spanTarget {
+	return spanTarget{Format: rec.Format, Client: rec.Client, Path: rec.Path, ItemsKey: rec.ItemsKey, IDField: rec.IDField}
 }

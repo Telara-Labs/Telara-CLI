@@ -60,6 +60,7 @@ func cliFileSources() []catalogFileSource {
 		mcpObjectSource("cursor", ClientCursor, ScopeProject, []string{".cursor/mcp.json"}, "mcpServers"),
 		mcpObjectSource("factory", "factory", ScopeGlobal, []string{"~/.factory/mcp.json"}, "mcpServers"),
 		mcpObjectSource("factory", "factory", ScopeProject, []string{".factory/mcp.json"}, "mcpServers"),
+		gooseSource(),
 		mcpObjectSource("gemini_code_assist", ClientGemini, ScopeGlobal, []string{"~/.gemini/settings.json"}, "mcpServers"),
 		mcpObjectSource("gemini_code_assist", ClientGemini, ScopeProject, []string{".gemini/settings.json"}, "mcpServers"),
 		mcpObjectSource("openai_codex", ClientCodex, ScopeGlobal, []string{"~/.codex/config.toml"}, "mcp_servers"),
@@ -74,6 +75,15 @@ func cliFileSources() []catalogFileSource {
 
 func mcpObjectSource(integration, client, scope string, paths []string, itemsPath string) catalogFileSource {
 	return mcpSource(integration, client, scope, paths, itemsPath, "_key")
+}
+
+// gooseSource is Goose's user config (block.github.io/goose/docs/guides/config-file):
+// `extensions` is a mapping keyed by extension, each with cmd/args/envs for a
+// stdio server or uri/headers for a streamable_http one.
+func gooseSource() catalogFileSource {
+	src := mcpObjectSource("goose", ClientGoose, ScopeGlobal, []string{"~/.config/goose/config.yaml"}, "extensions")
+	src.Resources[1].Fields["command"] = []string{"cmd", "args"}
+	return src
 }
 
 func mcpListSource(integration, client, scope string, paths []string, itemsPath, idField string) catalogFileSource {

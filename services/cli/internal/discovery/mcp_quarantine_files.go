@@ -13,6 +13,9 @@ type MCPConfigFile struct {
 	Path     string
 	// ItemsKey is the top-level key holding the servers object.
 	ItemsKey string
+	// IDField is "_key" when servers are keyed by name, else the entry field
+	// that names a server in a list (set for YAML files only).
+	IDField string
 }
 
 // QuarantinableMCPFiles derives the files from the discovery registry, so

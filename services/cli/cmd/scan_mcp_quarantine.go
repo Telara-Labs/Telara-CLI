@@ -126,6 +126,8 @@ func enforceCredentialStrips(home string, strips []mcpquarantine.CredentialStrip
 			fmt.Fprintf(os.Stderr, "Put a credential back in %s, server %q, %s (takedown lifted)\n", a.Path, a.Server, a.Note)
 		case "credential_conflict":
 			fmt.Fprintf(os.Stderr, "A credential was not put back in %s, server %q: %s\n", a.Path, a.Server, a.Note)
+		case "credential_unhandled":
+			fmt.Fprintf(os.Stderr, "A credential in %s, server %q, was not taken out: %s\n", a.Path, a.Server, a.Note)
 		}
 	}
 	if err != nil {
