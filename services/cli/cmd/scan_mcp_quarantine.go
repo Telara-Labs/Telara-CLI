@@ -28,6 +28,10 @@ type mcpEnforcementReport struct {
 	// CredentialStrips names the OAuth clients and token fingerprints whose
 	// credentials this device takes out of its MCP files (never a value).
 	CredentialStrips []string `json:"credential_strips"`
+
+	// strips is the parsed list, for the credential bindings the report
+	// carries. Nil when the list was not fetched or did not parse.
+	strips []mcpquarantine.CredentialStrip
 }
 
 // enforceMCPBlocks takes servers the tenant blocked out of this user's MCP
@@ -58,6 +62,9 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 	}
 	strips, stripErr := mcpquarantine.ParseCredentialStrips(bl.CredentialStrips)
 	rep.Checked, rep.Complete, rep.Blocked = true, true, mcpquarantine.Names(blocked)
+	if stripErr == nil {
+		rep.strips = strips
+	}
 	if managedOnly && !discovery.LoadManagedMCPPolicy().Present() {
 		// The gateway still refuses a blocked server on every governed call.
 		rep.Skipped = "your organization acts only on managed devices, and this device has no managed policy"

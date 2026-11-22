@@ -130,6 +130,12 @@ type CredentialRecord struct {
 	Original      string          `json:"original"`
 	Placeholder   string          `json:"placeholder"`
 	QuarantinedAt time.Time       `json:"quarantined_at"`
+	// Format is how the file is edited: empty for a JSON MCP file (the
+	// servers object is re-encoded), "toml" or "adc" for an in-place edit of
+	// the value's own bytes. OriginalRaw is then those exact bytes, quotes and
+	// escapes included, so a restore is byte-identical.
+	Format      string `json:"format,omitempty"`
+	OriginalRaw string `json:"original_raw,omitempty"`
 }
 
 // Location names where the value sits, without the value.
@@ -354,6 +360,13 @@ func SyncCredentials(homeDir string, strips []CredentialStrip, now time.Time) ([
 				errs = append(errs, err)
 			}
 		}
+		for _, t := range spanTargets(homeDir) {
+			a, err := stripSpanFile(homeDir, t, strips, now)
+			actions = append(actions, a...)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
 	}
 	a, err := restoreCredentials(homeDir, strips)
 	actions = append(actions, a...)
@@ -489,7 +502,11 @@ func restoreCredentials(homeDir string, strips []CredentialStrip) ([]Action, err
 			errs = append(errs, fmt.Errorf("credential record %s: %w", recPath, err))
 			continue
 		}
-		a, err := restoreOne(rec, recPath, strips)
+		restore := restoreOne
+		if rec.Format != "" {
+			restore = restoreSpan
+		}
+		a, err := restore(rec, recPath, strips)
 		if a != nil {
 			actions = append(actions, *a)
 		}

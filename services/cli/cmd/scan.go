@@ -21,6 +21,7 @@ import (
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/config"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/discovery"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/display"
+	"gitlab.com/telara-labs/telara-cli/services/cli/internal/mcpquarantine"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/schedule"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/skillshare"
 	"gitlab.com/telara-labs/telara-cli/services/cli/internal/version"
@@ -162,6 +163,17 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// discovered-managed; everything else stays discovered-unmediated. Matching
 	// is on host, not on the server's display name.
 	discovery.ApplyManagedEndpoints(&report, []string{endpoint})
+
+	// Where OAuth clients' credentials sit on this machine, present or taken
+	// out by a credential strip (TENG-3921). Key names only, never a value.
+	if home, err := os.UserHomeDir(); err == nil {
+		var strips []mcpquarantine.CredentialStrip
+		if enforcement != nil && enforcement.MCP != nil {
+			strips = enforcement.MCP.strips
+		}
+		bindings, complete := mcpquarantine.CredentialBindings(home, strips)
+		discovery.AppendCredentialBindings(&report, bindings, complete, completedAt.UTC().Format(time.RFC3339Nano))
+	}
 
 	summary := discovery.Summarize(report)
 	if board != nil {

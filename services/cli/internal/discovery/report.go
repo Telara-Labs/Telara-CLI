@@ -54,6 +54,10 @@ const (
 const (
 	ResourceKindMCPClientConfiguration = "AI_ESTATE_RESOURCE_KIND_MCP_CLIENT_CONFIGURATION"
 	ResourceKindAgentSkill             = "AI_ESTATE_RESOURCE_KIND_AGENT_SKILL"
+	// ResourceKindCredentialBinding is an OAuth client's credential written
+	// in plain text on this device (TENG-3921, credential strips). Its
+	// serverName is the OAuth client id; the value itself is never reported.
+	ResourceKindCredentialBinding = "AI_ESTATE_RESOURCE_KIND_CREDENTIAL_BINDING"
 )
 
 // CollectorIdentity describes the reporting collector. The gateway overrides
@@ -115,6 +119,11 @@ type ResourceAssertion struct {
 	// ManagedPolicyDenied: this device's managed MCP policy keeps the server
 	// out, so taking it off this device is enforced (TENG-3921).
 	ManagedPolicyDenied bool `json:"managedPolicyDenied,omitempty"`
+	// Credential binding fields, set only on CREDENTIAL_BINDING assertions
+	// (TENG-3921). CredentialState is "present" (the credential is printed
+	// here) or "quarantined" (a scan took it out and keeps it locally).
+	OAuthClientID   string `json:"oauthClientId,omitempty"`
+	CredentialState string `json:"credentialState,omitempty"`
 }
 
 // DiscoveryReport is the unit the collector submits. It is idempotent on
