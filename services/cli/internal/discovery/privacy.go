@@ -227,9 +227,14 @@ func isCredentialKey(key string) bool {
 	return false
 }
 
+// QuarantinedCredentialPrefix marks a value `telara scan` took a credential out
+// of (TENG-3921, mcpquarantine credential strips). The value is a placeholder,
+// so the field no longer holds an inline secret.
+const QuarantinedCredentialPrefix = "telara-quarantined:"
+
 func isInlineSecret(value string) bool {
 	v := strings.TrimSpace(value)
-	if v == "" || isEnvReference(v) {
+	if v == "" || isEnvReference(v) || strings.Contains(v, QuarantinedCredentialPrefix) {
 		return false
 	}
 	lower := strings.ToLower(v)

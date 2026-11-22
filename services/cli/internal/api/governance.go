@@ -12,6 +12,9 @@ type Blocklist struct {
 	Set         bool   `json:"set"`
 	ManagedOnly bool   `json:"managed_devices_only"`
 	Escrow      bool   `json:"device_escrow_enabled"`
+	// CredentialStrips is the oauth_credential_striplist setting, verbatim
+	// (client ids and token fingerprints, never a token).
+	CredentialStrips string `json:"credential_strips"`
 }
 
 // MCPServerBlocklist reads GET /v1/cli/mcp-servers/blocked, which accepts the

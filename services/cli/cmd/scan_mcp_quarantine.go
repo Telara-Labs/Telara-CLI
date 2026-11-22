@@ -25,6 +25,9 @@ type mcpEnforcementReport struct {
 	// Skipped says why no MCP file was changed on purpose, e.g. the tenant
 	// acts only on managed devices and this one has no managed policy.
 	Skipped string `json:"skipped,omitempty"`
+	// CredentialStrips names the OAuth clients and token fingerprints whose
+	// credentials this device takes out of its MCP files (never a value).
+	CredentialStrips []string `json:"credential_strips"`
 }
 
 // enforceMCPBlocks takes servers the tenant blocked out of this user's MCP
@@ -34,7 +37,7 @@ type mcpEnforcementReport struct {
 func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	rep := &mcpEnforcementReport{Blocked: []string{}, Actions: []mcpquarantine.Action{}, Errors: []string{}}
+	rep := &mcpEnforcementReport{Blocked: []string{}, Actions: []mcpquarantine.Action{}, Errors: []string{}, CredentialStrips: []string{}}
 	warn := func(format string, a ...interface{}) {
 		msg := fmt.Sprintf(format, a...)
 		rep.Complete = false
@@ -53,6 +56,7 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 		warn("%v; no MCP configuration was changed this run", err)
 		return rep
 	}
+	strips, stripErr := mcpquarantine.ParseCredentialStrips(bl.CredentialStrips)
 	rep.Checked, rep.Complete, rep.Blocked = true, true, mcpquarantine.Names(blocked)
 	if managedOnly && !discovery.LoadManagedMCPPolicy().Present() {
 		// The gateway still refuses a blocked server on every governed call.
@@ -85,7 +89,41 @@ func enforceMCPBlocks(endpoint, token string, asJSON bool) *mcpEnforcementReport
 		warn("%v", err)
 	}
 	escrowMCPEntries(ctx, client, home, blocked, bl.Escrow, rep, asJSON, warn)
+	// After the MCP sync, so an entry reinstated this run is stripped this run.
+	if stripErr != nil {
+		warn("%v; no credential was taken out or put back this run", stripErr)
+	} else {
+		enforceCredentialStrips(home, strips, rep, asJSON, warn)
+	}
 	return rep
+}
+
+// enforceCredentialStrips takes the credentials of OAuth clients the tenant took
+// offline out of this user's MCP files, and puts back those whose takedown was
+// lifted (TENG-3921). The token is never revoked at the provider and never sent
+// to Telara: it is kept in an owner-only record on this device.
+func enforceCredentialStrips(home string, strips []mcpquarantine.CredentialStrip, rep *mcpEnforcementReport, asJSON bool, warn func(string, ...interface{})) {
+	for _, s := range strips {
+		rep.CredentialStrips = append(rep.CredentialStrips, s.String())
+	}
+	actions, err := mcpquarantine.SyncCredentials(home, strips, time.Now())
+	for _, a := range actions {
+		rep.Actions = append(rep.Actions, a)
+		if asJSON {
+			continue
+		}
+		switch a.Kind {
+		case "credential_quarantined":
+			fmt.Fprintf(os.Stderr, "Took a credential out of %s, server %q, %s (taken offline by your organization); kept at %s\n", a.Path, a.Server, a.Note, a.Record)
+		case "credential_restored":
+			fmt.Fprintf(os.Stderr, "Put a credential back in %s, server %q, %s (takedown lifted)\n", a.Path, a.Server, a.Note)
+		case "credential_conflict":
+			fmt.Fprintf(os.Stderr, "A credential was not put back in %s, server %q: %s\n", a.Path, a.Server, a.Note)
+		}
+	}
+	if err != nil {
+		warn("%v", err)
+	}
 }
 
 // escrowMCPEntries keeps a credential-free copy of each entry this run took
